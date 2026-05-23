@@ -424,7 +424,7 @@ function createSettingsHtml() {
     `;
 }
 
-function onMenuItemClick() {
+function showSettingsPanel() {
     const popupContent = createSettingsHtml();
     
     const popup = document.createElement('div');
@@ -458,52 +458,45 @@ function onMenuItemClick() {
     initSettingsListeners();
 }
 
-function addExtensionMenuItem() {
-    const observer = new MutationObserver((mutations) => {
-        for (const mutation of mutations) {
-            if (mutation.addedNodes.length > 0) {
-                for (const node of mutation.addedNodes) {
-                    if (node.id === 'extensionsMenu' || (node.querySelector && node.querySelector('#extensionsMenu'))) {
-                        console.log('[NSFW模型切换器] 检测到扩展菜单已加载');
-                        addMenuItem();
-                        observer.disconnect();
-                        return;
-                    }
-                }
-            }
-        }
-    });
-    
-    observer.observe(document.body, { childList: true, subtree: true });
-    
-    setTimeout(() => {
-        observer.disconnect();
-        if (!document.getElementById('nsfw_switcher_menu_item')) {
-            addMenuItem();
-        }
-    }, 5000);
-}
-
-function addMenuItem() {
-    const extensionsMenu = document.getElementById('extensionsMenu');
-    if (!extensionsMenu) {
-        console.error('[NSFW模型切换器] 无法找到扩展菜单');
-        return;
-    }
-    
-    const menuItem = document.createElement('div');
-    menuItem.id = 'nsfw_switcher_menu_item';
-    menuItem.className = 'list-group-item flex-container flexGap5';
-    menuItem.title = 'NSFW模型切换器';
-    menuItem.innerHTML = `
-        <div class="fa-solid fa-shield-halved extensionsMenuExtensionButton"></div>
-        <span>NSFW模型切换器</span>
+function addSettingsButton() {
+    const buttonStyle = `
+        position: fixed;
+        bottom: 100px;
+        right: 20px;
+        width: 50px;
+        height: 50px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 50%;
+        border: none;
+        color: white;
+        font-size: 24px;
+        cursor: pointer;
+        z-index: 1000;
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.3s ease;
     `;
     
-    menuItem.addEventListener('click', onMenuItemClick);
+    const button = document.createElement('button');
+    button.id = 'nsfw_switcher_settings_button';
+    button.style.cssText = buttonStyle;
+    button.innerHTML = '<i class="fa-solid fa-shield-halved"></i>';
+    button.title = 'NSFW模型切换器';
     
-    extensionsMenu.appendChild(menuItem);
-    console.log('[NSFW模型切换器] 已添加到扩展菜单');
+    button.addEventListener('mouseenter', () => {
+        button.style.transform = 'scale(1.1)';
+    });
+    
+    button.addEventListener('mouseleave', () => {
+        button.style.transform = 'scale(1)';
+    });
+    
+    button.addEventListener('click', showSettingsPanel);
+    
+    document.body.appendChild(button);
+    console.log('[NSFW模型切换器] 设置按钮已添加到页面右下角');
 }
 
 async function initPlugin() {
@@ -525,7 +518,9 @@ async function initPlugin() {
         console.error('[NSFW模型切换器] 注册事件失败:', e);
     }
 
-    addExtensionMenuItem();
+    setTimeout(() => {
+        addSettingsButton();
+    }, 1000);
 
     console.log('[NSFW模型切换器] 插件初始化完成');
 }
