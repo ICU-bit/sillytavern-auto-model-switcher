@@ -1,4 +1,4 @@
-import { eventSource, event_types, saveSettingsDebounced, oai_settings } from '../../../script.js';
+import { eventSource, event_types, saveSettingsDebounced, oai_settings } from '../../../../script.js';
 
 const extension_name = 'nsfw-model-switcher';
 let logs = [];
