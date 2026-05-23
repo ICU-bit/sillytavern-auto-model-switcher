@@ -1,41 +1,353 @@
 console.log('[NSFW模型切换器] 插件开始加载...');
 
-// 先试试最简单的方式，不导入任何东西
-try {
-    console.log('[NSFW模型切换器] 尝试获取全局对象...');
+const extension_name = 'nsfw-model-switcher';
+let logs = [];
+
+function addLog(message, type = 'info') {
+    const timestamp = new Date().toLocaleTimeString('zh-CN');
+    logs.unshift({ timestamp, message, type });
+    if (logs.length > 50) {
+        logs = logs.slice(0, 50);
+    }
+    console.log(`[NSFW模型切换器] ${message}`);
+    updateLogDisplay();
+}
+
+function clearLogs() {
+    logs = [];
+    updateLogDisplay();
+}
+
+function updateLogDisplay() {
+    const container = $('#nsfw_switcher_logs');
+    if (!container.length) return;
     
-    // 检查 jQuery 是否可用
-    if (typeof $ === 'undefined') {
-        console.log('[NSFW模型切换器] jQuery 未加载');
-    } else {
-        console.log('[NSFW模型切换器] jQuery 已加载');
+    let html = '';
+    for (const log of logs) {
+        const color = log.type === 'success' ? '#27ae60' :
+                      log.type === 'warning' ? '#f39c12' :
+                      log.type === 'error' ? '#e74c3c' : '#3498db';
+        html += `
+            <div style="display: flex; gap: 8px; padding: 4px 0; font-size: 12px;">
+                <span style="color: #999; font-family: monospace;">${log.timestamp}</span>
+                <span style="color: ${color};">[${log.type.toUpperCase()}]</span>
+                <span style="color: #333;">${log.message}</span>
+            </div>
+        `;
     }
     
-    // 尝试设置面板
-    $(document).ready(() => {
-        console.log('[NSFW模型切换器] DOM 已准备好');
-        
-        setTimeout(() => {
-            console.log('[NSFW模型切换器] 尝试添加设置面板...');
-            
-            const extensionsSettings = $('#extensions_settings');
-            console.log('[NSFW模型切换器] extensions_settings 元素数量:', extensionsSettings.length);
-            
-            if (extensionsSettings.length > 0) {
-                const panel = $('<div class="inline-drawer"><div class="inline-drawer-toggle inline-drawer-header"><b><i class="fa-solid fa-shield-halved" style="margin-right: 8px;"></i>NSFW模型切换器</b><div class="inline-drawer-icon fa-solid fa-circle-chevron-down"></div></div><div class="inline-drawer-content"><div style="padding: 15px;"><p style="color: green;">插件已加载！</p></div></div></div>');
-                
-                extensionsSettings.append(panel);
-                console.log('[NSFW模型切换器] 设置面板已添加');
-            } else {
-                console.log('[NSFW模型切换器] extensions_settings 元素未找到，尝试添加到 body');
-                const panel = $('<div style="position: fixed; bottom: 20px; right: 20px; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.2); z-index: 999999;"><h3 style="margin: 0 0 10px 0;">NSFW模型切换器</h3><p style="color: green;">插件已加载！</p></div>');
-                $('body').append(panel);
-            }
-        }, 1000);
+    if (!html) {
+        html = '<div style="color: #999; font-size: 12px; text-align: center;">暂无日志</div>';
+    }
+    
+    container.html(html);
+}
+
+function loadSettings() {
+    try {
+        const settings = JSON.parse(localStorage.getItem('extension_settings') || '{}');
+        return settings[extension_name] || {
+            enabled: true,
+            nsfwApiUrl: '',
+            nsfwApiKey: '',
+            nsfwModelName: '',
+            modelA: '',
+            modelAApiUrl: '',
+            modelAApiKey: '',
+            modelASource: 'openai',
+            showNotification: true,
+            debugMode: false,
+        };
+    } catch (e) {
+        addLog('加载设置失败: ' + e.message, 'error');
+        return {
+            enabled: true,
+            nsfwApiUrl: '',
+            nsfwApiKey: '',
+            nsfwModelName: '',
+            modelA: '',
+            modelAApiUrl: '',
+            modelAApiKey: '',
+            modelASource: 'openai',
+            showNotification: true,
+            debugMode: false,
+        };
+    }
+}
+
+function saveSettings() {
+    try {
+        const settings = JSON.parse(localStorage.getItem('extension_settings') || '{}');
+        settings[extension_name] = {
+            enabled: $('#nsfw_switcher_enabled').prop('checked'),
+            nsfwApiUrl: $('#nsfw_switcher_api_url').val(),
+            nsfwApiKey: $('#nsfw_switcher_api_key').val(),
+            nsfwModelName: $('#nsfw_switcher_model_name').val(),
+            modelA: $('#nsfw_switcher_model_a').val(),
+            modelAApiUrl: $('#nsfw_switcher_model_a_api_url').val(),
+            modelAApiKey: $('#nsfw_switcher_model_a_api_key').val(),
+            modelASource: $('#nsfw_switcher_model_a_source').val(),
+            showNotification: $('#nsfw_switcher_show_notification').prop('checked'),
+            debugMode: $('#nsfw_switcher_debug_mode').prop('checked'),
+        };
+        localStorage.setItem('extension_settings', JSON.stringify(settings));
+        updateStatus();
+    } catch (e) {
+        addLog('保存设置失败: ' + e.message, 'error');
+    }
+}
+
+function updateStatus() {
+    const settings = loadSettings();
+    const statusIndicator = $('#nsfw_switcher_status_indicator');
+    const statusText = $('#nsfw_switcher_status_text');
+    
+    if (!settings.enabled) {
+        statusIndicator.css('background', '#e74c3c');
+        statusText.text('已禁用');
+    } else if (!settings.nsfwApiUrl || !settings.modelA) {
+        statusIndicator.css('background', '#f39c12');
+        statusText.text('配置不完整');
+    } else {
+        statusIndicator.css('background', '#27ae60');
+        statusText.text('运行中');
+    }
+}
+
+function createSettingsHtml() {
+    return `
+        <div class="inline-drawer">
+            <div class="inline-drawer-toggle inline-drawer-header">
+                <b><i class="fa-solid fa-shield-halved" style="margin-right: 8px;"></i>NSFW模型切换器</b>
+                <div class="inline-drawer-icon fa-solid fa-circle-chevron-down"></div>
+            </div>
+            <div class="inline-drawer-content">
+                <div style="padding: 15px;">
+                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px; padding: 10px; background: #f8f9fa; border-radius: 4px;">
+                        <div id="nsfw_switcher_status_indicator" style="width: 10px; height: 10px; border-radius: 50%; background: #f39c12;"></div>
+                        <div>
+                            <strong>状态:</strong>
+                            <span id="nsfw_switcher_status_text">配置不完整</span>
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #eee;">
+                        <div style="font-weight: 600; color: #333; margin-bottom: 10px;">
+                            <i class="fa-solid fa-toggle-on" style="margin-right: 8px;"></i>启用插件
+                        </div>
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="checkbox" id="nsfw_switcher_enabled" checked>
+                            <span>启用NSFW检测</span>
+                        </label>
+                    </div>
+
+                    <div style="margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #eee;">
+                        <div style="font-weight: 600; color: #333; margin-bottom: 10px;">
+                            <i class="fa-solid fa-microscope" style="margin-right: 8px;"></i>轻量化检测模型（判断NSFW）
+                        </div>
+                        
+                        <div style="margin-bottom: 12px;">
+                            <label style="display: block; font-weight: 500; color: #555; margin-bottom: 5px; font-size: 13px;">
+                                API地址 <span style="color: #e74c3c;">*</span>
+                            </label>
+                            <input type="text" id="nsfw_switcher_api_url" 
+                                   style="width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; box-sizing: border-box;"
+                                   placeholder="https://api.example.com/v1/chat/completions">
+                        </div>
+
+                        <div style="margin-bottom: 12px;">
+                            <label style="display: block; font-weight: 500; color: #555; margin-bottom: 5px; font-size: 13px;">
+                                API密钥
+                            </label>
+                            <input type="password" id="nsfw_switcher_api_key" 
+                                   style="width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; box-sizing: border-box;"
+                                   placeholder="sk-... (可选)">
+                        </div>
+
+                        <div style="margin-bottom: 12px;">
+                            <label style="display: block; font-weight: 500; color: #555; margin-bottom: 5px; font-size: 13px;">
+                                模型名称
+                            </label>
+                            <input type="text" id="nsfw_switcher_model_name" 
+                                   style="width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; box-sizing: border-box;"
+                                   placeholder="nsfw-detector">
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom: 15px;">
+                        <div style="font-weight: 600; color: #333; margin-bottom: 10px;">
+                            <i class="fa-solid fa-arrow-right-arrow-left" style="margin-right: 8px;"></i>切换目标模型（NSFW场景使用）
+                        </div>
+                        
+                        <div style="margin-bottom: 12px;">
+                            <label style="display: block; font-weight: 500; color: #555; margin-bottom: 5px; font-size: 13px;">
+                                目标模型名称 <span style="color: #e74c3c;">*</span>
+                            </label>
+                            <input type="text" id="nsfw_switcher_model_a" 
+                                   style="width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; box-sizing: border-box;"
+                                   placeholder="gpt-4">
+                        </div>
+
+                        <div style="margin-bottom: 12px;">
+                            <label style="display: block; font-weight: 500; color: #555; margin-bottom: 5px; font-size: 13px;">
+                                目标模型API地址
+                            </label>
+                            <input type="text" id="nsfw_switcher_model_a_api_url" 
+                                   style="width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; box-sizing: border-box;"
+                                   placeholder="https://api.example.com/v1/chat/completions">
+                        </div>
+
+                        <div style="margin-bottom: 12px;">
+                            <label style="display: block; font-weight: 500; color: #555; margin-bottom: 5px; font-size: 13px;">
+                                目标模型API密钥
+                            </label>
+                            <input type="password" id="nsfw_switcher_model_a_api_key" 
+                                   style="width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; box-sizing: border-box;"
+                                   placeholder="sk-... (可选)">
+                        </div>
+
+                        <div style="margin-bottom: 12px;">
+                            <label style="display: block; font-weight: 500; color: #555; margin-bottom: 5px; font-size: 13px;">
+                                API来源
+                            </label>
+                            <select id="nsfw_switcher_model_a_source" 
+                                    style="width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; box-sizing: border-box;">
+                                <option value="openai">OpenAI</option>
+                                <option value="claude">Claude</option>
+                                <option value="openrouter">OpenRouter</option>
+                            </select>
+                        </div>
+
+                        <div style="margin-bottom: 12px;">
+                            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                <input type="checkbox" id="nsfw_switcher_show_notification" checked>
+                                <span style="font-size: 13px;">显示切换通知</span>
+                            </label>
+                        </div>
+
+                        <div style="margin-bottom: 12px;">
+                            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                <input type="checkbox" id="nsfw_switcher_debug_mode">
+                                <span style="font-size: 13px;">调试模式（显示详细日志）</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                        <button id="nsfw_switcher_test_btn" 
+                                style="flex: 1; padding: 8px 12px; border: none; border-radius: 4px; font-size: 12px; font-weight: 500; cursor: pointer; background: #667eea; color: white;">
+                            <i class="fa-solid fa-play"></i> 测试API
+                        </button>
+                        <button id="nsfw_switcher_restore_btn" 
+                                style="flex: 1; padding: 8px 12px; border: none; border-radius: 4px; font-size: 12px; font-weight: 500; cursor: pointer; background: #e0e0e0; color: #555;">
+                            <i class="fa-solid fa-rotate-left"></i> 恢复原模型
+                        </button>
+                    </div>
+
+                    <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #eee;">
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+                            <div style="font-weight: 600; color: #333;">
+                                <i class="fa-solid fa-scroll" style="margin-right: 8px;"></i>运行日志
+                            </div>
+                            <button id="nsfw_switcher_clear_logs_btn" 
+                                    style="padding: 4px 8px; border: none; border-radius: 3px; font-size: 11px; cursor: pointer; background: #f5f5f5; color: #666;">
+                                <i class="fa-solid fa-trash"></i> 清空
+                            </button>
+                        </div>
+                        <div id="nsfw_switcher_logs" 
+                             style="max-height: 200px; overflow-y: auto; background: #fafafa; border-radius: 4px; padding: 10px; font-family: monospace;">
+                            <div style="color: #999; font-size: 12px; text-align: center;">暂无日志</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function initSettingsListeners() {
+    const settings = loadSettings();
+    
+    $('#nsfw_switcher_enabled').prop('checked', settings.enabled);
+    $('#nsfw_switcher_api_url').val(settings.nsfwApiUrl);
+    $('#nsfw_switcher_api_key').val(settings.nsfwApiKey);
+    $('#nsfw_switcher_model_name').val(settings.nsfwModelName);
+    $('#nsfw_switcher_model_a').val(settings.modelA);
+    $('#nsfw_switcher_model_a_api_url').val(settings.modelAApiUrl);
+    $('#nsfw_switcher_model_a_api_key').val(settings.modelAApiKey);
+    $('#nsfw_switcher_model_a_source').val(settings.modelASource);
+    $('#nsfw_switcher_show_notification').prop('checked', settings.showNotification);
+    $('#nsfw_switcher_debug_mode').prop('checked', settings.debugMode);
+    
+    updateStatus();
+    
+    $('#nsfw_switcher_enabled, #nsfw_switcher_api_url, #nsfw_switcher_api_key, #nsfw_switcher_model_name, ' +
+      '#nsfw_switcher_model_a, #nsfw_switcher_model_a_api_url, #nsfw_switcher_model_a_api_key, #nsfw_switcher_model_a_source, ' +
+      '#nsfw_switcher_show_notification, #nsfw_switcher_debug_mode').on('input change', () => {
+        saveSettings();
     });
     
-    console.log('[NSFW模型切换器] 插件加载完成！');
+    $('#nsfw_switcher_test_btn').on('click', async () => {
+        addLog('测试API功能（待实现）', 'info');
+        if (typeof toastr !== 'undefined') {
+            toastr.info('测试API功能待实现');
+        }
+    });
+    
+    $('#nsfw_switcher_restore_btn').on('click', async () => {
+        addLog('恢复原模型功能（待实现）', 'info');
+        if (typeof toastr !== 'undefined') {
+            toastr.info('恢复原模型功能待实现');
+        }
+    });
+    
+    $('#nsfw_switcher_clear_logs_btn').on('click', () => {
+        clearLogs();
+        addLog('日志已清空', 'info');
+    });
+}
+
+function addSettingsPanel() {
+    const extensionsSettings = $('#extensions_settings');
+    
+    if (extensionsSettings.length > 0) {
+        extensionsSettings.append(createSettingsHtml());
+        addLog('设置面板已添加到扩展设置', 'success');
+        initSettingsListeners();
+    } else {
+        addLog('extensions_settings 元素未找到，尝试添加到 body', 'warning');
+        const panel = $(createSettingsHtml());
+        panel.css({
+            position: 'fixed',
+            bottom: '20px',
+            right: '20px',
+            background: 'white',
+            borderRadius: '8px',
+            boxShadow: '0 2px 10px rgba(0,0,0,0.2)',
+            zIndex: '999999',
+            maxWidth: '450px',
+            maxHeight: '90vh',
+            overflowY: 'auto'
+        });
+        $('body').append(panel);
+        addLog('设置面板已添加到页面右下角', 'success');
+        initSettingsListeners();
+    }
+}
+
+try {
+    addLog('插件开始加载...', 'info');
+    
+    $(document).ready(() => {
+        addLog('DOM 已准备好', 'info');
+        
+        setTimeout(() => {
+            addSettingsPanel();
+            addLog('插件加载完成！', 'success');
+        }, 500);
+    });
     
 } catch (error) {
     console.error('[NSFW模型切换器] 加载出错:', error);
+    addLog('加载出错: ' + error.message, 'error');
 }
