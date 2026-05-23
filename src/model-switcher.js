@@ -3,7 +3,8 @@
  * 负责安全的模型切换，包含 oai_settings 快照保存和恢复
  */
 
-import { saveSettingsDebounced, oai_settings } from '../../../../../script.js';
+import { saveSettingsDebounced } from '../../../../../script.js';
+import { oai_settings } from '../../../../../scripts/openai.js';
 import { addLog } from './logger.js';
 import { loadSettings } from './settings.js';
 
