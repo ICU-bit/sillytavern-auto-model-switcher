@@ -1,4 +1,5 @@
-import('./settings.js').then(({
+try {
+    import('./settings.js').then(({
         loadSettings,
         saveSettings,
         getSetting,
