@@ -248,15 +248,150 @@ function onChatChanged() {
     }
 }
 
+function createSettingsHtml() {
+    return `
+    <div class="nsfw_switcher_container">
+        <div class="inline-drawer">
+            <div class="inline-drawer-toggle inline-drawer-header" style="padding: 10px;">
+                <b style="font-size: 1.1rem;">NSFW模型切换器</b>
+                <div class="fa-solid fa-circle-chevron-down inline-drawer-icon down"></div>
+            </div>
+
+            <div class="inline-drawer-content" style="display: none;">
+                <div style="padding: 10px;">
+                    <h4>基础设置</h4>
+                    <div class="checkbox_label range-block justifyLeft" style="margin-bottom: 15px;">
+                        <input type="checkbox" id="nsfw_switcher_enabled" checked>
+                        <span>启用插件</span>
+                    </div>
+
+                    <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                        <div class="menu_button_icon menu_button interactable">
+                            <i class="fa-brands fa-github fa-lg"></i>
+                            <a href="https://github.com/ICU-bit/sillytavern-auto-model-switcher/" target="_blank">项目地址</a>
+                        </div>
+                    </div>
+
+                    <hr/>
+
+                    <h4>NSFW检测设置</h4>
+
+                    <div style="margin-bottom: 15px;">
+                        <label for="nsfw_switcher_api_url">检测API地址</label>
+                        <small class="toggle-description justifyLeft">(OpenAI兼容的API端点)</small>
+                        <input type="text" id="nsfw_switcher_api_url" class="text_pole wide100p"
+                               placeholder="https://api.example.com/v1/chat/completions" style="margin-top: 5px;">
+                    </div>
+
+                    <div style="margin-bottom: 15px;">
+                        <label for="nsfw_switcher_api_key">API密钥</label>
+                        <small class="toggle-description justifyLeft">(可选，部分API需要)</small>
+                        <input type="password" id="nsfw_switcher_api_key" class="text_pole wide100p"
+                               placeholder="sk-..." style="margin-top: 5px;">
+                    </div>
+
+                    <div style="margin-bottom: 15px;">
+                        <label for="nsfw_switcher_model_name">检测模型名称</label>
+                        <small class="toggle-description justifyLeft">(用于判断NSFW的轻量化模型)</small>
+                        <input type="text" id="nsfw_switcher_model_name" class="text_pole wide100p"
+                               placeholder="nsfw-detector" style="margin-top: 5px;">
+                    </div>
+
+                    <hr/>
+
+                    <h4>模型切换设置</h4>
+
+                    <div style="margin-bottom: 15px;">
+                        <label for="nsfw_switcher_model_a">NSFW场景模型</label>
+                        <small class="toggle-description justifyLeft">(检测到NSFW内容时切换到此模型)</small>
+                        <input type="text" id="nsfw_switcher_model_a" class="text_pole wide100p"
+                               placeholder="gpt-4" style="margin-top: 5px;">
+                    </div>
+
+                    <div style="margin-bottom: 15px;">
+                        <label for="nsfw_switcher_prompt">检测提示词</label>
+                        <small class="toggle-description justifyLeft">(发送给检测模型，{content}会被替换为待检测内容)</small>
+                        <textarea id="nsfw_switcher_prompt" class="wide100p" rows="4"
+                                  style="margin-top: 5px; resize: vertical;">判断以下内容是否为NSFW（成人内容）：
+
+{content}
+
+请只输出1（是）或0（否）。</textarea>
+                    </div>
+
+                    <hr/>
+
+                    <div class="inline-drawer wide100p">
+                        <div class="inline-drawer-toggle inline-drawer-header">
+                            <b><span>高级设置</span></b>
+                            <div class="fa-solid fa-circle-chevron-down inline-drawer-icon down"></div>
+                        </div>
+                        <div class="inline-drawer-content" style="display: none; padding-top: 10px;">
+
+                            <div class="checkbox_label range-block justifyLeft" style="margin-bottom: 15px;">
+                                <input type="checkbox" id="nsfw_switcher_show_notification" checked>
+                                <span>显示切换通知</span>
+                                <small class="toggle-description justifyLeft">(切换模型时显示提示信息)</small>
+                            </div>
+
+                            <div class="checkbox_label range-block justifyLeft" style="margin-bottom: 15px;">
+                                <input type="checkbox" id="nsfw_switcher_debug_mode">
+                                <span>调试模式</span>
+                                <small class="toggle-description justifyLeft">(在控制台输出详细日志)</small>
+                            </div>
+
+                            <div style="margin-bottom: 15px;">
+                                <label for="nsfw_switcher_max_length">最大检测长度</label>
+                                <small class="toggle-description justifyLeft">(超过此长度的内容将被截断，单位：字符)</small>
+                                <input type="number" id="nsfw_switcher_max_length" class="text_pole"
+                                       min="100" max="10000" value="2000"
+                                       style="margin-top: 5px; width: 100%;">
+                            </div>
+                        </div>
+                    </div>
+
+                    <hr/>
+
+                    <div id="nsfw_switcher_status" style="margin-bottom: 15px;">
+                        <h4>当前状态</h4>
+                        <div style="padding: 10px; background: rgba(0,0,0,0.1); border-radius: 5px;">
+                            <div style="margin-bottom: 5px;">
+                                <strong>当前模型：</strong>
+                                <span id="nsfw_switcher_current_model">未检测</span>
+                            </div>
+                            <div style="margin-bottom: 5px;">
+                                <strong>原模型：</strong>
+                                <span id="nsfw_switcher_original_model">未保存</span>
+                            </div>
+                            <div>
+                                <strong>切换状态：</strong>
+                                <span id="nsfw_switcher_switch_status">正常</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="display: flex; gap: 10px; margin-top: 15px;">
+                        <div class="menu_button menu_button_icon" id="nsfw_switcher_test_btn">
+                            <i class="fa-solid fa-play"></i>
+                            <a>测试检测</a>
+                        </div>
+                        <div class="menu_button menu_button_icon" id="nsfw_switcher_restore_btn">
+                            <i class="fa-solid fa-rotate-left"></i>
+                            <a>恢复原模型</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    `;
+}
+
 async function initPlugin() {
-    loadSettings();
-    
     const savedOriginalModel = getSetting('originalModel', null);
     if (savedOriginalModel) {
         originalModel = savedOriginalModel;
     }
-    
-    initSettingsListeners();
     
     try {
         const { eventSource, event_types } = await import('../../extensions.js');
@@ -269,166 +404,30 @@ async function initPlugin() {
         console.error('[NSFW模型切换器] 注册事件失败:', e);
     }
 
-    const settingsHtml = `
-    <div class="nsfw_switcher_container">
-        <div class="nsfw_switcher_settings">
-            <div class="inline-drawer">
-                <div class="inline-drawer-header" style="padding: 10px;">
-                    <b style="font-size: 1.1rem;">NSFW模型切换器</b>
-                    <div class="fa-solid fa-circle-chevron-down inline-drawer-icon down"></div>
-                </div>
-
-                <div class="inline-drawer-content" style="display: none;">
-                    <div style="padding: 10px;">
-                        <h4>基础设置</h4>
-                        <div class="checkbox_label range-block justifyLeft" style="margin-bottom: 15px;">
-                            <input type="checkbox" id="nsfw_switcher_enabled">
-                            <span>启用插件</span>
-                        </div>
-
-                        <div style="display: flex; gap: 10px; margin-bottom: 15px;">
-                            <div class="menu_button_icon menu_button interactable">
-                                <i class="fa-brands fa-github fa-lg"></i>
-                                <a href="https://github.com/ICU-bit/sillytavern-auto-model-switcher/" target="_blank">项目地址</a>
-                            </div>
-                        </div>
-
-                        <hr/>
-
-                        <h4>NSFW检测设置</h4>
-
-                        <div style="margin-bottom: 15px;">
-                            <label for="nsfw_switcher_api_url">检测API地址</label>
-                            <small class="toggle-description justifyLeft">(OpenAI兼容的API端点)</small>
-                            <input type="text" id="nsfw_switcher_api_url" class="text_pole wide100p"
-                                   placeholder="https://api.example.com/v1/chat/completions" style="margin-top: 5px;">
-                        </div>
-
-                        <div style="margin-bottom: 15px;">
-                            <label for="nsfw_switcher_api_key">API密钥</label>
-                            <small class="toggle-description justifyLeft">(可选，部分API需要)</small>
-                            <input type="password" id="nsfw_switcher_api_key" class="text_pole wide100p"
-                                   placeholder="sk-..." style="margin-top: 5px;">
-                        </div>
-
-                        <div style="margin-bottom: 15px;">
-                            <label for="nsfw_switcher_model_name">检测模型名称</label>
-                            <small class="toggle-description justifyLeft">(用于判断NSFW的轻量化模型)</small>
-                            <input type="text" id="nsfw_switcher_model_name" class="text_pole wide100p"
-                                   placeholder="nsfw-detector" style="margin-top: 5px;">
-                        </div>
-
-                        <hr/>
-
-                        <h4>模型切换设置</h4>
-
-                        <div style="margin-bottom: 15px;">
-                            <label for="nsfw_switcher_model_a">NSFW场景模型</label>
-                            <small class="toggle-description justifyLeft">(检测到NSFW内容时切换到此模型)</small>
-                            <input type="text" id="nsfw_switcher_model_a" class="text_pole wide100p"
-                                   placeholder="gpt-4" style="margin-top: 5px;">
-                        </div>
-
-                        <div style="margin-bottom: 15px;">
-                            <label for="nsfw_switcher_prompt">检测提示词</label>
-                            <small class="toggle-description justifyLeft">(发送给检测模型，{content}会被替换为待检测内容)</small>
-                            <textarea id="nsfw_switcher_prompt" class="wide100p" rows="4"
-                                      style="margin-top: 5px; resize: vertical;">判断以下内容是否为NSFW（成人内容）：
-
-{content}
-
-请只输出1（是）或0（否）。</textarea>
-                        </div>
-
-                        <hr/>
-
-                        <div class="inline-drawer wide100p">
-                            <div class="inline-drawer-toggle inline-drawer-header">
-                                <b><span>高级设置</span></b>
-                                <div class="fa-solid fa-circle-chevron-down inline-drawer-icon down"></div>
-                            </div>
-                            <div class="inline-drawer-content" style="display: none; padding-top: 10px;">
-
-                                <div class="checkbox_label range-block justifyLeft" style="margin-bottom: 15px;">
-                                    <input type="checkbox" id="nsfw_switcher_show_notification">
-                                    <span>显示切换通知</span>
-                                    <small class="toggle-description justifyLeft">(切换模型时显示提示信息)</small>
-                                </div>
-
-                                <div class="checkbox_label range-block justifyLeft" style="margin-bottom: 15px;">
-                                    <input type="checkbox" id="nsfw_switcher_debug_mode">
-                                    <span>调试模式</span>
-                                    <small class="toggle-description justifyLeft">(在控制台输出详细日志)</small>
-                                </div>
-
-                                <div style="margin-bottom: 15px;">
-                                    <label for="nsfw_switcher_max_length">最大检测长度</label>
-                                    <small class="toggle-description justifyLeft">(超过此长度的内容将被截断，单位：字符)</small>
-                                    <input type="number" id="nsfw_switcher_max_length" class="text_pole"
-                                           min="100" max="10000" value="2000"
-                                           style="margin-top: 5px; width: 100%;">
-                                </div>
-                            </div>
-                        </div>
-
-                        <hr/>
-
-                        <div id="nsfw_switcher_status" style="margin-bottom: 15px;">
-                            <h4>当前状态</h4>
-                            <div style="padding: 10px; background: rgba(0,0,0,0.1); border-radius: 5px;">
-                                <div style="margin-bottom: 5px;">
-                                    <strong>当前模型：</strong>
-                                    <span id="nsfw_switcher_current_model">未检测</span>
-                                </div>
-                                <div style="margin-bottom: 5px;">
-                                    <strong>原模型：</strong>
-                                    <span id="nsfw_switcher_original_model">未保存</span>
-                                </div>
-                                <div>
-                                    <strong>切换状态：</strong>
-                                    <span id="nsfw_switcher_switch_status">正常</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div style="display: flex; gap: 10px; margin-top: 15px;">
-                            <div class="menu_button menu_button_icon" id="nsfw_switcher_test_btn">
-                                <i class="fa-solid fa-play"></i>
-                                <a>测试检测</a>
-                            </div>
-                            <div class="menu_button menu_button_icon" id="nsfw_switcher_restore_btn">
-                                <i class="fa-solid fa-rotate-left"></i>
-                                <a>恢复原模型</a>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-    `;
-
+    const settingsHtml = createSettingsHtml();
     const container = document.createElement('div');
     container.innerHTML = settingsHtml;
     const settingsElement = container.firstElementChild;
 
-    const targetElement = document.querySelector('#extensionsMenu') || document.querySelector('#extensions_settings');
+    const targetElement = document.querySelector('#extensions-settings-button');
     if (targetElement) {
-        targetElement.appendChild(settingsElement);
+        $(targetElement).after(settingsElement);
         loadSettings();
         initSettingsListeners();
         console.log('[NSFW模型切换器] 设置界面已添加');
     } else {
         console.warn('[NSFW模型切换器] 未找到目标容器，稍后重试');
         setTimeout(() => {
-            const retryTarget = document.querySelector('#extensionsMenu') || document.querySelector('#extensions_settings');
+            const retryTarget = document.querySelector('#extensions-settings-button');
             if (retryTarget) {
-                retryTarget.appendChild(settingsElement);
+                $(retryTarget).after(settingsElement);
                 loadSettings();
                 initSettingsListeners();
                 console.log('[NSFW模型切换器] 设置界面已添加（延迟加载）');
+            } else {
+                console.error('[NSFW模型切换器] 无法找到扩展设置容器');
             }
-        }, 3000);
+        }, 2000);
     }
 
     console.log('[NSFW模型切换器] 插件加载完成');
