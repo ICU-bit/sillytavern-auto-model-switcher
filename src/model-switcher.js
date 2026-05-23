@@ -3,23 +3,10 @@
  * 负责安全的模型切换，包含 oai_settings 快照保存和恢复
  */
 
-import { saveSettingsDebounced } from '../../../../../script.js';
-import { getContext } from '../../../../extensions.js';
+import { saveSettingsDebounced, oai_settings } from '../../../../../script.js';
 import { addLog } from './logger.js';
 import { loadSettings } from './settings.js';
 
-function getOaiSettings() {
-    try {
-        const context = getContext();
-        if (context?.oai_settings) return context.oai_settings;
-    } catch (_) {}
-    if (typeof window.oai_settings !== 'undefined') return window.oai_settings;
-    return null;
-}
-
-/**
- * 模型来源到 oai_settings 字段名的映射
- */
 const SOURCE_TO_FIELD = {
     'openai': 'openai_model',
     'claude': 'claude_model',
@@ -47,20 +34,11 @@ const SOURCE_TO_FIELD = {
     'siliconflow': 'siliconflow_model',
 };
 
-/**
- * 当前可用的模型来源列表（从 SOURCE_TO_FIELD 动态提取）
- */
 const SUPPORTED_SOURCES = Object.keys(SOURCE_TO_FIELD);
 
-/** 快照：切换前保存的原始 oai_settings */
 let settingsSnapshot = null;
 
-/**
- * 深拷贝 oai_settings 的模型相关部分
- * @returns {object|null}
- */
 function takeSnapshot() {
-    const oai_settings = getOaiSettings();
     if (!oai_settings) {
         addLog('无法创建快照：oai_settings 不可用', 'error');
         return null;
@@ -87,23 +65,13 @@ function takeSnapshot() {
     }
 }
 
-/**
- * 当前模型来源对应的模型字段名
- * @returns {string|null}
- */
 function getCurrentModelField() {
-    const oai_settings = getOaiSettings();
     if (!oai_settings) return null;
     const source = oai_settings.chat_completion_source;
     return SOURCE_TO_FIELD[source] || null;
 }
 
-/**
- * 获取当前使用的模型信息
- * @returns {{ model: string, source: string }|null}
- */
 export function getCurrentModelInfo() {
-    const oai_settings = getOaiSettings();
     if (!oai_settings) return null;
 
     const source = oai_settings.chat_completion_source;
@@ -118,13 +86,9 @@ export function getCurrentModelInfo() {
     return null;
 }
 
-/**
- * 保存当前 oai_settings 快照（仅首次调用生效）
- * @returns {boolean} 是否成功保存
- */
 export function saveSettingsSnapshot() {
     if (settingsSnapshot) {
-        return true; // 已保存，无需重复
+        return true;
     }
 
     settingsSnapshot = takeSnapshot();
@@ -140,21 +104,12 @@ export function saveSettingsSnapshot() {
     return false;
 }
 
-/**
- * 切换模型到目标
- * @param {string} targetModel - 目标模型名称
- * @param {string} [targetSource] - 目标 API 来源
- * @param {string} [targetApiUrl] - 目标 API 地址
- * @param {string} [targetApiKey] - 目标 API 密钥
- * @returns {Promise<boolean>}
- */
 export async function switchToModel(targetModel, targetSource, targetApiUrl, targetApiKey) {
     if (!targetModel) {
         addLog('未指定切换模型', 'warning');
         return false;
     }
 
-    const oai_settings = getOaiSettings();
     if (!oai_settings) {
         addLog('无法切换：oai_settings 不可用', 'error');
         return false;
@@ -213,17 +168,12 @@ export async function switchToModel(targetModel, targetSource, targetApiUrl, tar
     }
 }
 
-/**
- * 恢复到原始模型（使用快照）
- * @returns {Promise<boolean>}
- */
 export async function restoreOriginalModel() {
     if (!settingsSnapshot) {
         addLog('无可恢复的快照（未保存过原始模型）', 'info');
         return false;
     }
 
-    const oai_settings = getOaiSettings();
     if (!oai_settings) {
         addLog('无法恢复：oai_settings 不可用', 'error');
         return false;
@@ -267,26 +217,15 @@ export async function restoreOriginalModel() {
     }
 }
 
-/**
- * 检查当前是否已保存快照
- * @returns {boolean}
- */
 export function hasSettingsSnapshot() {
     return settingsSnapshot !== null;
 }
 
-/**
- * 清除快照（用于手动重置）
- */
 export function clearSettingsSnapshot() {
     settingsSnapshot = null;
     addLog('快照已清除', 'info');
 }
 
-/**
- * 获取支持的来源列表
- * @returns {string[]}
- */
 export function getSupportedSources() {
     return [...SUPPORTED_SOURCES];
 }
