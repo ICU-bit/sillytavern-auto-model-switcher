@@ -250,253 +250,107 @@ function onChatChanged() {
 
 function createSettingsHtml() {
     return `
-    <style>
-        .nsfw-switcher-settings-panel {
-            background: #fff;
-            border-radius: 8px;
-            padding: 15px;
-            max-width: 400px;
-        }
-        .nsfw-switcher-section {
-            margin-bottom: 15px;
-            padding-bottom: 15px;
-            border-bottom: 1px solid #eee;
-        }
-        .nsfw-switcher-section:last-child {
-            border-bottom: none;
-            margin-bottom: 0;
-            padding-bottom: 0;
-        }
-        .nsfw-switcher-title {
-            font-weight: 600;
-            color: #333;
-            margin-bottom: 10px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        .nsfw-switcher-title i {
-            color: #667eea;
-        }
-        .nsfw-switcher-form-group {
-            margin-bottom: 12px;
-        }
-        .nsfw-switcher-label {
-            display: block;
-            font-weight: 500;
-            color: #555;
-            margin-bottom: 5px;
-            font-size: 13px;
-        }
-        .nsfw-switcher-label .required {
-            color: #e74c3c;
-        }
-        .nsfw-switcher-input {
-            width: 100%;
-            padding: 8px 10px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            font-size: 13px;
-            box-sizing: border-box;
-        }
-        .nsfw-switcher-input:focus {
-            outline: none;
-            border-color: #667eea;
-        }
-        .nsfw-switcher-status {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            padding: 10px;
-            background: #f8f9fa;
-            border-radius: 4px;
-            margin-bottom: 12px;
-        }
-        .nsfw-switcher-status-indicator {
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-        }
-        .nsfw-switcher-status-active { background: #2ecc71; }
-        .nsfw-switcher-status-inactive { background: #95a5a6; }
-        .nsfw-switcher-status-warning { background: #f39c12; }
-        .nsfw-switcher-btn {
-            padding: 8px 12px;
-            border: none;
-            border-radius: 4px;
-            font-size: 12px;
-            font-weight: 500;
-            cursor: pointer;
-            margin-right: 8px;
-            margin-bottom: 8px;
-        }
-        .nsfw-switcher-btn-primary {
-            background: #667eea;
-            color: white;
-        }
-        .nsfw-switcher-btn-secondary {
-            background: #e0e0e0;
-            color: #555;
-        }
-        .nsfw-switcher-btn-danger {
-            background: #ffeaa7;
-            color: #d63031;
-        }
-    </style>
-    
-    <div id="nsfw_switcher_settings" class="nsfw-switcher-settings-panel">
-        <div class="nsfw-switcher-status">
-            <div id="nsfw_switcher_status_indicator" class="nsfw-switcher-status-indicator nsfw-switcher-status-warning"></div>
-            <div>
-                <strong>状态:</strong>
-                <span id="nsfw_switcher_status_text">配置不完整</span>
-            </div>
+    <div class="inline-drawer">
+        <div class="inline-drawer-toggle inline-drawer-header">
+            <b><i class="fa-solid fa-shield-halved" style="margin-right: 8px;"></i>NSFW模型切换器</b>
+            <div class="inline-drawer-icon fa-solid fa-circle-chevron-down"></div>
         </div>
+        <div class="inline-drawer-content">
+            <div style="padding: 15px;">
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px; padding: 10px; background: #f8f9fa; border-radius: 4px;">
+                    <div id="nsfw_switcher_status_indicator" style="width: 10px; height: 10px; border-radius: 50%; background: #f39c12;"></div>
+                    <div>
+                        <strong>状态:</strong>
+                        <span id="nsfw_switcher_status_text">配置不完整</span>
+                    </div>
+                </div>
 
-        <div class="nsfw-switcher-section">
-            <div class="nsfw-switcher-title">
-                <i class="fa-solid fa-toggle-on"></i>
-                启用插件
-            </div>
-            <input type="checkbox" id="nsfw_switcher_enabled" checked>
-            <label for="nsfw_switcher_enabled">启用NSFW检测</label>
-        </div>
+                <div style="margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #eee;">
+                    <div style="font-weight: 600; color: #333; margin-bottom: 10px;">
+                        <i class="fa-solid fa-toggle-on" style="margin-right: 8px;"></i>启用插件
+                    </div>
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" id="nsfw_switcher_enabled" checked>
+                        <span>启用NSFW检测</span>
+                    </label>
+                </div>
 
-        <div class="nsfw-switcher-section">
-            <div class="nsfw-switcher-title">
-                <i class="fa-solid fa-server"></i>
-                API配置
-            </div>
-            
-            <div class="nsfw-switcher-form-group">
-                <label class="nsfw-switcher-label" for="nsfw_switcher_api_url">
-                    检测API地址 <span class="required">*</span>
-                </label>
-                <input type="text" id="nsfw_switcher_api_url" class="nsfw-switcher-input"
-                       placeholder="https://api.example.com/v1/chat/completions">
-            </div>
+                <div style="margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #eee;">
+                    <div style="font-weight: 600; color: #333; margin-bottom: 10px;">
+                        <i class="fa-solid fa-server" style="margin-right: 8px;"></i>API配置
+                    </div>
+                    
+                    <div style="margin-bottom: 12px;">
+                        <label style="display: block; font-weight: 500; color: #555; margin-bottom: 5px; font-size: 13px;">
+                            检测API地址 <span style="color: #e74c3c;">*</span>
+                        </label>
+                        <input type="text" id="nsfw_switcher_api_url" 
+                               style="width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; box-sizing: border-box;"
+                               placeholder="https://api.example.com/v1/chat/completions">
+                    </div>
 
-            <div class="nsfw-switcher-form-group">
-                <label class="nsfw-switcher-label" for="nsfw_switcher_api_key">
-                    API密钥
-                </label>
-                <input type="password" id="nsfw_switcher_api_key" class="nsfw-switcher-input"
-                       placeholder="sk-... (可选)">
-            </div>
+                    <div style="margin-bottom: 12px;">
+                        <label style="display: block; font-weight: 500; color: #555; margin-bottom: 5px; font-size: 13px;">
+                            API密钥
+                        </label>
+                        <input type="password" id="nsfw_switcher_api_key" 
+                               style="width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; box-sizing: border-box;"
+                               placeholder="sk-... (可选)">
+                    </div>
 
-            <div class="nsfw-switcher-form-group">
-                <label class="nsfw-switcher-label" for="nsfw_switcher_model_name">
-                    检测模型名称
-                </label>
-                <input type="text" id="nsfw_switcher_model_name" class="nsfw-switcher-input"
-                       placeholder="nsfw-detector" value="nsfw-detector">
-            </div>
-        </div>
+                    <div style="margin-bottom: 12px;">
+                        <label style="display: block; font-weight: 500; color: #555; margin-bottom: 5px; font-size: 13px;">
+                            检测模型名称
+                        </label>
+                        <input type="text" id="nsfw_switcher_model_name" 
+                               style="width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; box-sizing: border-box;"
+                               value="nsfw-detector">
+                    </div>
+                </div>
 
-        <div class="nsfw-switcher-section">
-            <div class="nsfw-switcher-title">
-                <i class="fa-solid fa-robot"></i>
-                模型切换配置
-            </div>
-            
-            <div class="nsfw-switcher-form-group">
-                <label class="nsfw-switcher-label" for="nsfw_switcher_model_a">
-                    NSFW场景模型 <span class="required">*</span>
-                </label>
-                <input type="text" id="nsfw_switcher_model_a" class="nsfw-switcher-input"
-                       placeholder="gpt-4">
-            </div>
-        </div>
+                <div style="margin-bottom: 15px;">
+                    <div style="font-weight: 600; color: #333; margin-bottom: 10px;">
+                        <i class="fa-solid fa-robot" style="margin-right: 8px;"></i>模型切换配置
+                    </div>
+                    
+                    <div style="margin-bottom: 12px;">
+                        <label style="display: block; font-weight: 500; color: #555; margin-bottom: 5px; font-size: 13px;">
+                            NSFW场景模型 <span style="color: #e74c3c;">*</span>
+                        </label>
+                        <input type="text" id="nsfw_switcher_model_a" 
+                               style="width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; box-sizing: border-box;"
+                               placeholder="gpt-4">
+                    </div>
+                </div>
 
-        <div>
-            <button id="nsfw_switcher_test_btn" class="nsfw-switcher-btn nsfw-switcher-btn-primary">
-                <i class="fa-solid fa-play"></i> 测试API
-            </button>
-            <button id="nsfw_switcher_restore_btn" class="nsfw-switcher-btn nsfw-switcher-btn-secondary">
-                <i class="fa-solid fa-rotate-left"></i> 恢复原模型
-            </button>
-            <br>
-            <button id="nsfw_switcher_reset_btn" class="nsfw-switcher-btn nsfw-switcher-btn-danger">
-                <i class="fa-solid fa-trash"></i> 重置所有设置
-            </button>
+                <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                    <button id="nsfw_switcher_test_btn" 
+                            style="flex: 1; padding: 8px 12px; border: none; border-radius: 4px; font-size: 12px; font-weight: 500; cursor: pointer; background: #667eea; color: white;">
+                        <i class="fa-solid fa-play"></i> 测试API
+                    </button>
+                    <button id="nsfw_switcher_restore_btn" 
+                            style="flex: 1; padding: 8px 12px; border: none; border-radius: 4px; font-size: 12px; font-weight: 500; cursor: pointer; background: #e0e0e0; color: #555;">
+                        <i class="fa-solid fa-rotate-left"></i> 恢复原模型
+                    </button>
+                </div>
+
+                <button id="nsfw_switcher_reset_btn" 
+                        style="width: 100%; padding: 8px 12px; border: none; border-radius: 4px; font-size: 12px; font-weight: 500; cursor: pointer; background: #ffeaa7; color: #d63031;">
+                    <i class="fa-solid fa-trash"></i> 重置所有设置
+                </button>
+            </div>
         </div>
     </div>
     `;
 }
 
-function showSettingsPanel() {
-    const popupContent = createSettingsHtml();
-    
-    const popup = document.createElement('div');
-    popup.innerHTML = popupContent;
-    document.body.appendChild(popup);
-    
-    const dialog = popup.querySelector('.nsfw-switcher-settings-panel');
-    dialog.style.position = 'fixed';
-    dialog.style.top = '50%';
-    dialog.style.left = '50%';
-    dialog.style.transform = 'translate(-50%, -50%)';
-    dialog.style.zIndex = '9999';
-    dialog.style.boxShadow = '0 8px 24px rgba(0,0,0,0.2)';
-    
-    const overlay = document.createElement('div');
-    overlay.style.position = 'fixed';
-    overlay.style.top = '0';
-    overlay.style.left = '0';
-    overlay.style.right = '0';
-    overlay.style.bottom = '0';
-    overlay.style.background = 'rgba(0,0,0,0.5)';
-    overlay.style.zIndex = '9998';
-    document.body.appendChild(overlay);
-    
-    overlay.addEventListener('click', () => {
-        document.body.removeChild(popup);
-        document.body.removeChild(overlay);
-    });
-    
+function addSettingsPanel() {
+    const settingsHtml = createSettingsHtml();
+    const $panel = $(settingsHtml);
+    $('#extensions_settings').append($panel);
     loadSettings();
     initSettingsListeners();
-}
-
-function addSettingsButton() {
-    const buttonStyle = `
-        position: fixed;
-        bottom: 100px;
-        right: 20px;
-        width: 50px;
-        height: 50px;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        border-radius: 50%;
-        border: none;
-        color: white;
-        font-size: 24px;
-        cursor: pointer;
-        z-index: 1000;
-        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        transition: all 0.3s ease;
-    `;
-    
-    const button = document.createElement('button');
-    button.id = 'nsfw_switcher_settings_button';
-    button.style.cssText = buttonStyle;
-    button.innerHTML = '<i class="fa-solid fa-shield-halved"></i>';
-    button.title = 'NSFW模型切换器';
-    
-    button.addEventListener('mouseenter', () => {
-        button.style.transform = 'scale(1.1)';
-    });
-    
-    button.addEventListener('mouseleave', () => {
-        button.style.transform = 'scale(1)';
-    });
-    
-    button.addEventListener('click', showSettingsPanel);
-    
-    document.body.appendChild(button);
-    console.log('[NSFW模型切换器] 设置按钮已添加到页面右下角');
+    console.log('[NSFW模型切换器] 设置面板已添加到扩展设置');
 }
 
 async function initPlugin() {
@@ -518,9 +372,22 @@ async function initPlugin() {
         console.error('[NSFW模型切换器] 注册事件失败:', e);
     }
 
-    setTimeout(() => {
-        addSettingsButton();
-    }, 1000);
+    $(document).ready(() => {
+        setTimeout(() => {
+            if ($('#extensions_settings').length > 0) {
+                addSettingsPanel();
+            } else {
+                console.warn('[NSFW模型切换器] 扩展设置容器未找到，稍后重试');
+                setTimeout(() => {
+                    if ($('#extensions_settings').length > 0) {
+                        addSettingsPanel();
+                    } else {
+                        console.error('[NSFW模型切换器] 无法找到扩展设置容器');
+                    }
+                }, 2000);
+            }
+        }, 100);
+    });
 
     console.log('[NSFW模型切换器] 插件初始化完成');
 }
