@@ -32,7 +32,7 @@ export async function detectNSFW(content) {
     }
 
     try {
-        const prompt = '判断以下内容是否为 NSFW（成人内容）：\n\n' + content + '\n\n请只输出 1（是）或 0（否）';
+        const prompt = '判断以下内容是否为 NSFW（成人/色情内容）。请只回复数字 1（是）或 0（否），不要输出任何其他内容：\n\n' + content;
 
         if (debugMode) {
             addLog('调用 NSFW 检测 API...', 'info');
@@ -74,8 +74,8 @@ export async function detectNSFW(content) {
             addLog('检测结果: ' + result, 'info');
         }
 
-        if (result === '1' || result === 'true') return true;
-        if (result === '0' || result === 'false') return false;
+        if (result === '1' || result === 'true' || result === '是' || result === 'yes') return true;
+        if (result === '0' || result === 'false' || result === '否' || result === 'no') return false;
 
         // 不确定的结果，记录警告并返回 null
         addLog('无法解析检测结果: ' + result, 'warning');
