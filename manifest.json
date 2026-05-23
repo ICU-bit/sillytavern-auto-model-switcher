@@ -8,6 +8,6 @@
     "version": "0.1.0",
     "homePage": "https://github.com/ICU-bit/sillytavern-auto-model-switcher",
     "hooks": {
-        "activate": "activate"
+        "activate": "init"
     }
 }

@@ -695,14 +695,10 @@ function addSettingsPanel() {
 }
 
 async function init() {
-    addLog('插件正在初始化...', 'info');
-}
-
-async function activate() {
     addLog('插件正在激活...', 'info');
     addSettingsPanel();
     registerEventListeners();
     addLog('插件加载完成！', 'success');
 }
 
-export { init, activate };
+export { init };
