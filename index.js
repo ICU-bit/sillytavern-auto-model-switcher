@@ -1,31 +1,18 @@
 console.log('[NSFW模型切换器] 插件加载中...');
 
-const extensionName = 'nsfw-model-switcher';
+import {
+    loadSettings,
+    saveSettings,
+    getSetting,
+    setSetting,
+    initSettingsListeners,
+    updateStatusDisplay,
+    getSettings
+} from './settings.js';
+
 let originalModel = null;
 let isTemporarySwitch = false;
 let lastAiMessage = null;
-
-function getSetting(name, defaultValue = null) {
-    try {
-        const settings = JSON.parse(localStorage.getItem('extension_settings') || '{}');
-        return settings[extensionName]?.[name] ?? defaultValue;
-    } catch (e) {
-        return defaultValue;
-    }
-}
-
-function setSetting(name, value) {
-    try {
-        const settings = JSON.parse(localStorage.getItem('extension_settings') || '{}');
-        if (!settings[extensionName]) {
-            settings[extensionName] = {};
-        }
-        settings[extensionName][name] = value;
-        localStorage.setItem('extension_settings', JSON.stringify(settings));
-    } catch (e) {
-        console.error('[NSFW模型切换器] 设置保存失败:', e);
-    }
-}
 
 async function switchToModel(targetModel) {
     if (!targetModel) {
@@ -42,11 +29,13 @@ async function switchToModel(targetModel) {
         if (!originalModel) {
             originalModel = currentModel;
             console.log('[NSFW模型切换器] 保存原模型:', originalModel);
+            updateStatusDisplay(currentModel, originalModel, false);
         }
 
         if (currentModel === targetModel) {
             console.log('[NSFW模型切换器] 已是目标模型，无需切换');
             isTemporarySwitch = true;
+            updateStatusDisplay(currentModel, originalModel, true);
             return true;
         }
 
@@ -69,8 +58,9 @@ async function switchToModel(targetModel) {
         isTemporarySwitch = true;
         setSetting('lastSwitchTime', Date.now());
         setSetting('originalModel', originalModel);
+        updateStatusDisplay(targetModel, originalModel, true);
 
-        if (typeof toastr !== 'undefined') {
+        if (getSetting('showNotification', true) && typeof toastr !== 'undefined') {
             toastr.info(`[NSFW模型切换器] 已切换到: ${targetModel}`);
         }
         return true;
@@ -93,6 +83,7 @@ async function restoreOriginalModel() {
         if (currentModel === originalModel) {
             console.log('[NSFW模型切换器] 已是原模型，无需恢复');
             isTemporarySwitch = false;
+            updateStatusDisplay(originalModel, originalModel, false);
             return true;
         }
 
@@ -119,8 +110,9 @@ async function restoreOriginalModel() {
         originalModel = null;
         setSetting('lastSwitchTime', null);
         setSetting('originalModel', null);
+        updateStatusDisplay(restoredModel, null, false);
 
-        if (typeof toastr !== 'undefined') {
+        if (getSetting('showNotification', true) && typeof toastr !== 'undefined') {
             toastr.info(`[NSFW模型切换器] 已恢复原模型: ${restoredModel || '默认模型'}`);
         }
         return true;
@@ -130,28 +122,34 @@ async function restoreOriginalModel() {
     }
 }
 
-async function detectNSFW(content) {
-    const apiUrl = getSetting('nsfwApiUrl');
-    const apiKey = getSetting('nsfwApiKey');
-    const modelName = getSetting('nsfwModelName', 'nsfw-detector');
+window.restoreNsfwOriginalModel = restoreOriginalModel;
 
-    if (!apiUrl) {
-        console.log('[NSFW模型切换器] 未配置NSFW检测API');
+async function detectNSFW(content) {
+    const settings = getSettings();
+    const { nsfwApiUrl, nsfwApiKey, nsfwModelName, prompt, maxLength } = settings;
+
+    if (!nsfwApiUrl) {
+        if (getSetting('debugMode', false)) {
+            console.log('[NSFW模型切换器] 未配置NSFW检测API');
+        }
         return null;
     }
 
     try {
-        const response = await fetch(apiUrl, {
+        const truncatedContent = content.length > maxLength ? content.substring(0, maxLength) : content;
+        const finalPrompt = prompt.replace('{content}', truncatedContent);
+
+        const response = await fetch(nsfwApiUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                ...(apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {})
+                ...(nsfwApiKey ? { 'Authorization': `Bearer ${nsfwApiKey}` } : {})
             },
             body: JSON.stringify({
-                model: modelName,
+                model: nsfwModelName || 'nsfw-detector',
                 messages: [{
                     role: 'user',
-                    content: `判断以下内容是否为NSFW（成人内容）：\n\n${content}\n\n请只输出1（是）或0（否）。`
+                    content: finalPrompt
                 }],
                 temperature: 0.0,
                 max_tokens: 1
@@ -165,7 +163,9 @@ async function detectNSFW(content) {
         const data = await response.json();
         const result = data.choices?.[0]?.message?.content?.trim();
 
-        console.log('[NSFW模型切换器] 检测结果:', result);
+        if (getSetting('debugMode', false)) {
+            console.log('[NSFW模型切换器] 检测结果:', result);
+        }
 
         return result === '1';
     } catch (error) {
@@ -173,6 +173,8 @@ async function detectNSFW(content) {
         return null;
     }
 }
+
+window.testNsfwDetection = detectNSFW;
 
 async function onAiMessageRendered(chatId) {
     try {
@@ -185,11 +187,13 @@ async function onAiMessageRendered(chatId) {
         }
 
         lastAiMessage = chat.mes;
-        console.log('[NSFW模型切换器] 捕获AI回复:', chatId, chat.mes.substring(0, 50));
+        
+        if (getSetting('debugMode', false)) {
+            console.log('[NSFW模型切换器] 捕获AI回复:', chatId, chat.mes.substring(0, 50));
+        }
 
         const enabled = getSetting('enabled', true);
         if (!enabled) {
-            console.log('[NSFW模型切换器] 插件已禁用');
             return;
         }
 
@@ -220,7 +224,9 @@ async function onUserMessageSent(mesId) {
             return;
         }
 
-        console.log('[NSFW模型切换器] 用户发送消息:', mesId);
+        if (getSetting('debugMode', false)) {
+            console.log('[NSFW模型切换器] 用户发送消息:', mesId);
+        }
 
         if (isTemporarySwitch && lastAiMessage) {
             const nsfwDetected = await detectNSFW(lastAiMessage);
@@ -238,47 +244,194 @@ function onChatChanged() {
     if (!isTemporarySwitch) {
         originalModel = null;
         lastAiMessage = null;
+        updateStatusDisplay(null, null, false);
     }
 }
 
-function initSettings() {
-    const defaultSettings = {
-        enabled: true,
-        nsfwApiUrl: '',
-        nsfwApiKey: '',
-        nsfwModelName: 'nsfw-detector',
-        modelA: ''
-    };
-
-    try {
-        const currentSettings = JSON.parse(localStorage.getItem('extension_settings') || '{}');
-        if (!currentSettings[extensionName]) {
-            currentSettings[extensionName] = defaultSettings;
-            localStorage.setItem('extension_settings', JSON.stringify(currentSettings));
-        }
-
-        originalModel = getSetting('originalModel', null);
-        console.log('[NSFW模型切换器] 初始化完成，原模型:', originalModel);
-    } catch (e) {
-        console.error('[NSFW模型切换器] 初始化设置失败:', e);
+async function initPlugin() {
+    loadSettings();
+    
+    const savedOriginalModel = getSetting('originalModel', null);
+    if (savedOriginalModel) {
+        originalModel = savedOriginalModel;
     }
-}
-
-function initPlugin() {
-    initSettings();
-
+    
+    initSettingsListeners();
+    
     try {
-        import('../../extensions.js').then(({ eventSource, event_types }) => {
-            eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, onAiMessageRendered);
-            eventSource.on(event_types.MESSAGE_SENT, onUserMessageSent);
-            eventSource.on(event_types.CHAT_CHANGED, onChatChanged);
+        const { eventSource, event_types } = await import('../../extensions.js');
+        eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, onAiMessageRendered);
+        eventSource.on(event_types.MESSAGE_SENT, onUserMessageSent);
+        eventSource.on(event_types.CHAT_CHANGED, onChatChanged);
 
-            console.log('[NSFW模型切换器] 事件监听已注册');
-            console.log('[NSFW模型切换器] 插件加载完成');
-        });
+        console.log('[NSFW模型切换器] 事件监听已注册');
     } catch (e) {
         console.error('[NSFW模型切换器] 注册事件失败:', e);
     }
+
+    const settingsHtml = `
+    <div class="nsfw_switcher_container">
+        <div class="nsfw_switcher_settings">
+            <div class="inline-drawer">
+                <div class="inline-drawer-header" style="padding: 10px;">
+                    <b style="font-size: 1.1rem;">NSFW模型切换器</b>
+                    <div class="fa-solid fa-circle-chevron-down inline-drawer-icon down"></div>
+                </div>
+
+                <div class="inline-drawer-content" style="display: none;">
+                    <div style="padding: 10px;">
+                        <h4>基础设置</h4>
+                        <div class="checkbox_label range-block justifyLeft" style="margin-bottom: 15px;">
+                            <input type="checkbox" id="nsfw_switcher_enabled">
+                            <span>启用插件</span>
+                        </div>
+
+                        <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                            <div class="menu_button_icon menu_button interactable">
+                                <i class="fa-brands fa-github fa-lg"></i>
+                                <a href="https://github.com/ICU-bit/sillytavern-auto-model-switcher/" target="_blank">项目地址</a>
+                            </div>
+                        </div>
+
+                        <hr/>
+
+                        <h4>NSFW检测设置</h4>
+
+                        <div style="margin-bottom: 15px;">
+                            <label for="nsfw_switcher_api_url">检测API地址</label>
+                            <small class="toggle-description justifyLeft">(OpenAI兼容的API端点)</small>
+                            <input type="text" id="nsfw_switcher_api_url" class="text_pole wide100p"
+                                   placeholder="https://api.example.com/v1/chat/completions" style="margin-top: 5px;">
+                        </div>
+
+                        <div style="margin-bottom: 15px;">
+                            <label for="nsfw_switcher_api_key">API密钥</label>
+                            <small class="toggle-description justifyLeft">(可选，部分API需要)</small>
+                            <input type="password" id="nsfw_switcher_api_key" class="text_pole wide100p"
+                                   placeholder="sk-..." style="margin-top: 5px;">
+                        </div>
+
+                        <div style="margin-bottom: 15px;">
+                            <label for="nsfw_switcher_model_name">检测模型名称</label>
+                            <small class="toggle-description justifyLeft">(用于判断NSFW的轻量化模型)</small>
+                            <input type="text" id="nsfw_switcher_model_name" class="text_pole wide100p"
+                                   placeholder="nsfw-detector" style="margin-top: 5px;">
+                        </div>
+
+                        <hr/>
+
+                        <h4>模型切换设置</h4>
+
+                        <div style="margin-bottom: 15px;">
+                            <label for="nsfw_switcher_model_a">NSFW场景模型</label>
+                            <small class="toggle-description justifyLeft">(检测到NSFW内容时切换到此模型)</small>
+                            <input type="text" id="nsfw_switcher_model_a" class="text_pole wide100p"
+                                   placeholder="gpt-4" style="margin-top: 5px;">
+                        </div>
+
+                        <div style="margin-bottom: 15px;">
+                            <label for="nsfw_switcher_prompt">检测提示词</label>
+                            <small class="toggle-description justifyLeft">(发送给检测模型，{content}会被替换为待检测内容)</small>
+                            <textarea id="nsfw_switcher_prompt" class="wide100p" rows="4"
+                                      style="margin-top: 5px; resize: vertical;">判断以下内容是否为NSFW（成人内容）：
+
+{content}
+
+请只输出1（是）或0（否）。</textarea>
+                        </div>
+
+                        <hr/>
+
+                        <div class="inline-drawer wide100p">
+                            <div class="inline-drawer-toggle inline-drawer-header">
+                                <b><span>高级设置</span></b>
+                                <div class="fa-solid fa-circle-chevron-down inline-drawer-icon down"></div>
+                            </div>
+                            <div class="inline-drawer-content" style="display: none; padding-top: 10px;">
+
+                                <div class="checkbox_label range-block justifyLeft" style="margin-bottom: 15px;">
+                                    <input type="checkbox" id="nsfw_switcher_show_notification">
+                                    <span>显示切换通知</span>
+                                    <small class="toggle-description justifyLeft">(切换模型时显示提示信息)</small>
+                                </div>
+
+                                <div class="checkbox_label range-block justifyLeft" style="margin-bottom: 15px;">
+                                    <input type="checkbox" id="nsfw_switcher_debug_mode">
+                                    <span>调试模式</span>
+                                    <small class="toggle-description justifyLeft">(在控制台输出详细日志)</small>
+                                </div>
+
+                                <div style="margin-bottom: 15px;">
+                                    <label for="nsfw_switcher_max_length">最大检测长度</label>
+                                    <small class="toggle-description justifyLeft">(超过此长度的内容将被截断，单位：字符)</small>
+                                    <input type="number" id="nsfw_switcher_max_length" class="text_pole"
+                                           min="100" max="10000" value="2000"
+                                           style="margin-top: 5px; width: 100%;">
+                                </div>
+                            </div>
+                        </div>
+
+                        <hr/>
+
+                        <div id="nsfw_switcher_status" style="margin-bottom: 15px;">
+                            <h4>当前状态</h4>
+                            <div style="padding: 10px; background: rgba(0,0,0,0.1); border-radius: 5px;">
+                                <div style="margin-bottom: 5px;">
+                                    <strong>当前模型：</strong>
+                                    <span id="nsfw_switcher_current_model">未检测</span>
+                                </div>
+                                <div style="margin-bottom: 5px;">
+                                    <strong>原模型：</strong>
+                                    <span id="nsfw_switcher_original_model">未保存</span>
+                                </div>
+                                <div>
+                                    <strong>切换状态：</strong>
+                                    <span id="nsfw_switcher_switch_status">正常</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div style="display: flex; gap: 10px; margin-top: 15px;">
+                            <div class="menu_button menu_button_icon" id="nsfw_switcher_test_btn">
+                                <i class="fa-solid fa-play"></i>
+                                <a>测试检测</a>
+                            </div>
+                            <div class="menu_button menu_button_icon" id="nsfw_switcher_restore_btn">
+                                <i class="fa-solid fa-rotate-left"></i>
+                                <a>恢复原模型</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    `;
+
+    const container = document.createElement('div');
+    container.innerHTML = settingsHtml;
+    const settingsElement = container.firstElementChild;
+
+    const targetElement = document.querySelector('#extensionsMenu') || document.querySelector('#extensions_settings');
+    if (targetElement) {
+        targetElement.appendChild(settingsElement);
+        loadSettings();
+        initSettingsListeners();
+        console.log('[NSFW模型切换器] 设置界面已添加');
+    } else {
+        console.warn('[NSFW模型切换器] 未找到目标容器，稍后重试');
+        setTimeout(() => {
+            const retryTarget = document.querySelector('#extensionsMenu') || document.querySelector('#extensions_settings');
+            if (retryTarget) {
+                retryTarget.appendChild(settingsElement);
+                loadSettings();
+                initSettingsListeners();
+                console.log('[NSFW模型切换器] 设置界面已添加（延迟加载）');
+            }
+        }, 3000);
+    }
+
+    console.log('[NSFW模型切换器] 插件加载完成');
 }
 
 if (typeof jQuery !== 'undefined') {
