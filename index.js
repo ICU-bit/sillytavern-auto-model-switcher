@@ -303,41 +303,6 @@ function createSettingsHtml() {
             outline: none;
             border-color: #667eea;
         }
-        .nsfw-switcher-textarea {
-            width: 100%;
-            padding: 8px 10px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            font-size: 13px;
-            resize: vertical;
-            min-height: 60px;
-            box-sizing: border-box;
-        }
-        .nsfw-switcher-help {
-            font-size: 11px;
-            color: #888;
-            margin-top: 3px;
-        }
-        .nsfw-switcher-checkbox {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            cursor: pointer;
-            padding: 8px;
-            background: #f8f9fa;
-            border-radius: 4px;
-        }
-        .nsfw-switcher-checkbox input[type="checkbox"] {
-            accent-color: #667eea;
-        }
-        .nsfw-switcher-checkbox-text {
-            flex: 1;
-        }
-        .nsfw-switcher-checkbox-title {
-            font-weight: 500;
-            color: #333;
-            font-size: 13px;
-        }
         .nsfw-switcher-status {
             display: flex;
             align-items: center;
@@ -393,12 +358,8 @@ function createSettingsHtml() {
                 <i class="fa-solid fa-toggle-on"></i>
                 启用插件
             </div>
-            <div class="nsfw-switcher-checkbox">
-                <input type="checkbox" id="nsfw_switcher_enabled" checked>
-                <div class="nsfw-switcher-checkbox-text">
-                    <div class="nsfw-switcher-checkbox-title">启用NSFW检测</div>
-                </div>
-            </div>
+            <input type="checkbox" id="nsfw_switcher_enabled" checked>
+            <label for="nsfw_switcher_enabled">启用NSFW检测</label>
         </div>
 
         <div class="nsfw-switcher-section">
@@ -413,7 +374,6 @@ function createSettingsHtml() {
                 </label>
                 <input type="text" id="nsfw_switcher_api_url" class="nsfw-switcher-input"
                        placeholder="https://api.example.com/v1/chat/completions">
-                <div class="nsfw-switcher-help">轻量化NSFW检测模型的API地址</div>
             </div>
 
             <div class="nsfw-switcher-form-group">
@@ -445,28 +405,6 @@ function createSettingsHtml() {
                 </label>
                 <input type="text" id="nsfw_switcher_model_a" class="nsfw-switcher-input"
                        placeholder="gpt-4">
-                <div class="nsfw-switcher-help">检测到NSFW内容时切换到此模型</div>
-            </div>
-        </div>
-
-        <div class="nsfw-switcher-section">
-            <div class="nsfw-switcher-title">
-                <i class="fa-solid fa-gear"></i>
-                高级设置
-            </div>
-            
-            <div class="nsfw-switcher-checkbox" style="margin-bottom: 8px;">
-                <input type="checkbox" id="nsfw_switcher_show_notification" checked>
-                <div class="nsfw-switcher-checkbox-text">
-                    <div class="nsfw-switcher-checkbox-title">显示通知</div>
-                </div>
-            </div>
-
-            <div class="nsfw-switcher-checkbox">
-                <input type="checkbox" id="nsfw_switcher_debug_mode">
-                <div class="nsfw-switcher-checkbox-text">
-                    <div class="nsfw-switcher-checkbox-title">调试模式</div>
-                </div>
             </div>
         </div>
 
@@ -486,22 +424,85 @@ function createSettingsHtml() {
     `;
 }
 
-function addExtensionMenuItem() {
-    const menuItem = `
-        <div id="nsfw_switcher_menu_item" class="list-group-item flex-container flexGap5" title="NSFW模型切换器">
-            <div class="fa-solid fa-shield-halved extensionsMenuExtensionButton"></div>
-            <span>NSFW模型切换器</span>
-        </div>
-    `;
+function onMenuItemClick() {
+    const popupContent = createSettingsHtml();
     
-    $('#extensionsMenu').append(menuItem);
+    const popup = document.createElement('div');
+    popup.innerHTML = popupContent;
+    document.body.appendChild(popup);
     
-    $('#nsfw_switcher_menu_item').on('click', function() {
-        callGenericPopup(createSettingsHtml(), POPUP_TYPE.TEXT, 'NSFW模型切换器', { allowVerticalScrolling: true });
-        loadSettings();
-        initSettingsListeners();
+    const dialog = popup.querySelector('.nsfw-switcher-settings-panel');
+    dialog.style.position = 'fixed';
+    dialog.style.top = '50%';
+    dialog.style.left = '50%';
+    dialog.style.transform = 'translate(-50%, -50%)';
+    dialog.style.zIndex = '9999';
+    dialog.style.boxShadow = '0 8px 24px rgba(0,0,0,0.2)';
+    
+    const overlay = document.createElement('div');
+    overlay.style.position = 'fixed';
+    overlay.style.top = '0';
+    overlay.style.left = '0';
+    overlay.style.right = '0';
+    overlay.style.bottom = '0';
+    overlay.style.background = 'rgba(0,0,0,0.5)';
+    overlay.style.zIndex = '9998';
+    document.body.appendChild(overlay);
+    
+    overlay.addEventListener('click', () => {
+        document.body.removeChild(popup);
+        document.body.removeChild(overlay);
     });
     
+    loadSettings();
+    initSettingsListeners();
+}
+
+function addExtensionMenuItem() {
+    const observer = new MutationObserver((mutations) => {
+        for (const mutation of mutations) {
+            if (mutation.addedNodes.length > 0) {
+                for (const node of mutation.addedNodes) {
+                    if (node.id === 'extensionsMenu' || (node.querySelector && node.querySelector('#extensionsMenu'))) {
+                        console.log('[NSFW模型切换器] 检测到扩展菜单已加载');
+                        addMenuItem();
+                        observer.disconnect();
+                        return;
+                    }
+                }
+            }
+        }
+    });
+    
+    observer.observe(document.body, { childList: true, subtree: true });
+    
+    setTimeout(() => {
+        observer.disconnect();
+        if (!document.getElementById('nsfw_switcher_menu_item')) {
+            addMenuItem();
+        }
+    }, 5000);
+}
+
+function addMenuItem() {
+    const extensionsMenu = document.getElementById('extensionsMenu');
+    if (!extensionsMenu) {
+        console.error('[NSFW模型切换器] 无法找到扩展菜单');
+        return;
+    }
+    
+    const menuItem = document.createElement('div');
+    menuItem.id = 'nsfw_switcher_menu_item';
+    menuItem.className = 'list-group-item flex-container flexGap5';
+    menuItem.title = 'NSFW模型切换器';
+    menuItem.innerHTML = `
+        <div class="fa-solid fa-shield-halved extensionsMenuExtensionButton"></div>
+        <span>NSFW模型切换器</span>
+    `;
+    
+    menuItem.addEventListener('click', onMenuItemClick);
+    
+    extensionsMenu.appendChild(menuItem);
     console.log('[NSFW模型切换器] 已添加到扩展菜单');
 }
 
@@ -524,22 +525,7 @@ async function initPlugin() {
         console.error('[NSFW模型切换器] 注册事件失败:', e);
     }
 
-    $(document).ready(() => {
-        setTimeout(() => {
-            if ($('#extensionsMenu').length > 0) {
-                addExtensionMenuItem();
-            } else {
-                console.warn('[NSFW模型切换器] 扩展菜单还未加载，稍后重试');
-                setTimeout(() => {
-                    if ($('#extensionsMenu').length > 0) {
-                        addExtensionMenuItem();
-                    } else {
-                        console.error('[NSFW模型切换器] 无法找到扩展菜单');
-                    }
-                }, 2000);
-            }
-        }, 100);
-    });
+    addExtensionMenuItem();
 
     console.log('[NSFW模型切换器] 插件初始化完成');
 }
