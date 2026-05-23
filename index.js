@@ -251,97 +251,41 @@ function onChatChanged() {
 function createSettingsHtml() {
     return `
     <style>
-        .nsfw-switcher-floating-btn {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            width: 60px;
-            height: 60px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border-radius: 50%;
-            box-shadow: 0 4px 12px rgba(102,126,234,0.4);
-            cursor: pointer;
-            z-index: 9999;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.3s ease;
-        }
-        .nsfw-switcher-floating-btn:hover {
-            transform: scale(1.1);
-            box-shadow: 0 6px 16px rgba(102,126,234,0.5);
-        }
-        .nsfw-switcher-floating-btn i {
-            color: white;
-            font-size: 24px;
-        }
-        .nsfw-switcher-panel {
-            position: fixed;
-            bottom: 90px;
-            right: 20px;
-            width: 400px;
-            max-height: 80vh;
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.15);
-            z-index: 9998;
-            overflow: hidden;
-            display: none;
-        }
-        .nsfw-switcher-panel.show {
-            display: block;
-        }
-        .nsfw-switcher-panel-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 15px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        .nsfw-switcher-panel-header h3 {
-            margin: 0;
-            font-size: 16px;
-        }
-        .nsfw-switcher-panel-close {
-            background: none;
-            border: none;
-            color: white;
-            font-size: 20px;
-            cursor: pointer;
-        }
-        .nsfw-switcher-panel-body {
-            padding: 15px;
-            max-height: calc(80vh - 60px);
-            overflow-y: auto;
-        }
-        .nsfw-switcher-card {
-            background: #f8f9fa;
-            border: 1px solid #e0e0e0;
+        .nsfw-switcher-settings-panel {
+            background: #fff;
             border-radius: 8px;
             padding: 15px;
-            margin-bottom: 12px;
+            max-width: 400px;
         }
-        .nsfw-switcher-card-title {
-            font-size: 14px;
+        .nsfw-switcher-section {
+            margin-bottom: 15px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        .nsfw-switcher-section:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+            padding-bottom: 0;
+        }
+        .nsfw-switcher-title {
             font-weight: 600;
             color: #333;
-            margin-bottom: 12px;
+            margin-bottom: 10px;
             display: flex;
             align-items: center;
             gap: 8px;
         }
-        .nsfw-switcher-card-title i {
+        .nsfw-switcher-title i {
             color: #667eea;
         }
         .nsfw-switcher-form-group {
-            margin-bottom: 15px;
+            margin-bottom: 12px;
         }
         .nsfw-switcher-label {
             display: block;
             font-weight: 500;
             color: #555;
-            margin-bottom: 6px;
+            margin-bottom: 5px;
             font-size: 13px;
         }
         .nsfw-switcher-label .required {
@@ -349,9 +293,9 @@ function createSettingsHtml() {
         }
         .nsfw-switcher-input {
             width: 100%;
-            padding: 10px 12px;
+            padding: 8px 10px;
             border: 1px solid #ddd;
-            border-radius: 6px;
+            border-radius: 4px;
             font-size: 13px;
             box-sizing: border-box;
         }
@@ -361,32 +305,29 @@ function createSettingsHtml() {
         }
         .nsfw-switcher-textarea {
             width: 100%;
-            padding: 10px 12px;
+            padding: 8px 10px;
             border: 1px solid #ddd;
-            border-radius: 6px;
+            border-radius: 4px;
             font-size: 13px;
             resize: vertical;
-            min-height: 80px;
+            min-height: 60px;
             box-sizing: border-box;
         }
         .nsfw-switcher-help {
             font-size: 11px;
             color: #888;
-            margin-top: 4px;
+            margin-top: 3px;
         }
         .nsfw-switcher-checkbox {
             display: flex;
             align-items: center;
-            gap: 10px;
-            padding: 10px;
-            background: white;
-            border-radius: 6px;
+            gap: 8px;
             cursor: pointer;
-            border: 1px solid #e0e0e0;
+            padding: 8px;
+            background: #f8f9fa;
+            border-radius: 4px;
         }
         .nsfw-switcher-checkbox input[type="checkbox"] {
-            width: 18px;
-            height: 18px;
             accent-color: #667eea;
         }
         .nsfw-switcher-checkbox-text {
@@ -397,41 +338,35 @@ function createSettingsHtml() {
             color: #333;
             font-size: 13px;
         }
-        .nsfw-switcher-checkbox-desc {
-            font-size: 11px;
-            color: #888;
-        }
         .nsfw-switcher-status {
             display: flex;
             align-items: center;
-            gap: 12px;
-            padding: 12px;
-            background: white;
-            border-radius: 8px;
-            border: 1px solid #e0e0e0;
+            gap: 10px;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 4px;
             margin-bottom: 12px;
         }
         .nsfw-switcher-status-indicator {
-            width: 12px;
-            height: 12px;
+            width: 10px;
+            height: 10px;
             border-radius: 50%;
         }
-        .status-active { background: #2ecc71; }
-        .status-inactive { background: #95a5a6; }
-        .status-warning { background: #f39c12; }
+        .nsfw-switcher-status-active { background: #2ecc71; }
+        .nsfw-switcher-status-inactive { background: #95a5a6; }
+        .nsfw-switcher-status-warning { background: #f39c12; }
         .nsfw-switcher-btn {
-            padding: 10px 16px;
+            padding: 8px 12px;
             border: none;
-            border-radius: 6px;
-            font-size: 13px;
+            border-radius: 4px;
+            font-size: 12px;
             font-weight: 500;
             cursor: pointer;
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
+            margin-right: 8px;
+            margin-bottom: 8px;
         }
         .nsfw-switcher-btn-primary {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: #667eea;
             color: white;
         }
         .nsfw-switcher-btn-secondary {
@@ -442,174 +377,132 @@ function createSettingsHtml() {
             background: #ffeaa7;
             color: #d63031;
         }
-        .nsfw-switcher-footer {
-            text-align: center;
-            padding: 10px;
-            color: #999;
-            font-size: 11px;
-            border-top: 1px solid #e0e0e0;
-        }
     </style>
     
-    <!-- 悬浮按钮 -->
-    <div class="nsfw-switcher-floating-btn" id="nsfw_switcher_toggle" title="NSFW模型切换器">
-        <i class="fa-solid fa-shield-halved"></i>
-    </div>
-    
-    <!-- 设置面板 -->
-    <div class="nsfw-switcher-panel" id="nsfw_switcher_panel">
-        <div class="nsfw-switcher-panel-header">
-            <h3>🛡️ NSFW模型切换器</h3>
-            <button class="nsfw-switcher-panel-close" id="nsfw_switcher_close">&times;</button>
+    <div id="nsfw_switcher_settings" class="nsfw-switcher-settings-panel">
+        <div class="nsfw-switcher-status">
+            <div id="nsfw_switcher_status_indicator" class="nsfw-switcher-status-indicator nsfw-switcher-status-warning"></div>
+            <div>
+                <strong>状态:</strong>
+                <span id="nsfw_switcher_status_text">配置不完整</span>
+            </div>
         </div>
-        <div class="nsfw-switcher-panel-body">
+
+        <div class="nsfw-switcher-section">
+            <div class="nsfw-switcher-title">
+                <i class="fa-solid fa-toggle-on"></i>
+                启用插件
+            </div>
+            <div class="nsfw-switcher-checkbox">
+                <input type="checkbox" id="nsfw_switcher_enabled" checked>
+                <div class="nsfw-switcher-checkbox-text">
+                    <div class="nsfw-switcher-checkbox-title">启用NSFW检测</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="nsfw-switcher-section">
+            <div class="nsfw-switcher-title">
+                <i class="fa-solid fa-server"></i>
+                API配置
+            </div>
             
-            <div class="nsfw-switcher-status">
-                <div id="nsfw_switcher_status_indicator" class="nsfw-switcher-status-indicator status-warning"></div>
-                <div>
-                    <strong>状态:</strong>
-                    <span id="nsfw_switcher_status_text">配置不完整</span>
-                </div>
+            <div class="nsfw-switcher-form-group">
+                <label class="nsfw-switcher-label" for="nsfw_switcher_api_url">
+                    检测API地址 <span class="required">*</span>
+                </label>
+                <input type="text" id="nsfw_switcher_api_url" class="nsfw-switcher-input"
+                       placeholder="https://api.example.com/v1/chat/completions">
+                <div class="nsfw-switcher-help">轻量化NSFW检测模型的API地址</div>
             </div>
 
-            <div class="nsfw-switcher-card">
-                <div class="nsfw-switcher-card-title">
-                    <i class="fa-solid fa-toggle-on"></i>
-                    启用插件
-                </div>
-                <div class="nsfw-switcher-checkbox">
-                    <input type="checkbox" id="nsfw_switcher_enabled" checked>
-                    <div class="nsfw-switcher-checkbox-text">
-                        <div class="nsfw-switcher-checkbox-title">启用NSFW检测</div>
-                        <div class="nsfw-switcher-checkbox-desc">自动检测AI回复并切换模型</div>
-                    </div>
-                </div>
+            <div class="nsfw-switcher-form-group">
+                <label class="nsfw-switcher-label" for="nsfw_switcher_api_key">
+                    API密钥
+                </label>
+                <input type="password" id="nsfw_switcher_api_key" class="nsfw-switcher-input"
+                       placeholder="sk-... (可选)">
             </div>
 
-            <div class="nsfw-switcher-card">
-                <div class="nsfw-switcher-card-title">
-                    <i class="fa-solid fa-server"></i>
-                    API 配置
-                </div>
-                
-                <div class="nsfw-switcher-form-group">
-                    <label class="nsfw-switcher-label" for="nsfw_switcher_api_url">
-                        检测API地址 <span class="required">*</span>
-                    </label>
-                    <input type="text" id="nsfw_switcher_api_url" class="nsfw-switcher-input"
-                           placeholder="https://api.example.com/v1/chat/completions">
-                    <div class="nsfw-switcher-help">轻量化NSFW检测模型的API地址</div>
-                </div>
-
-                <div class="nsfw-switcher-form-group">
-                    <label class="nsfw-switcher-label" for="nsfw_switcher_api_key">
-                        API密钥
-                    </label>
-                    <input type="password" id="nsfw_switcher_api_key" class="nsfw-switcher-input"
-                           placeholder="sk-... (可选)">
-                </div>
-
-                <div class="nsfw-switcher-form-group">
-                    <label class="nsfw-switcher-label" for="nsfw_switcher_model_name">
-                        检测模型名称
-                    </label>
-                    <input type="text" id="nsfw_switcher_model_name" class="nsfw-switcher-input"
-                           placeholder="nsfw-detector" value="nsfw-detector">
-                </div>
-            </div>
-
-            <div class="nsfw-switcher-card">
-                <div class="nsfw-switcher-card-title">
-                    <i class="fa-solid fa-robot"></i>
-                    模型切换配置
-                </div>
-                
-                <div class="nsfw-switcher-form-group">
-                    <label class="nsfw-switcher-label" for="nsfw_switcher_model_a">
-                        NSFW场景模型 <span class="required">*</span>
-                    </label>
-                    <input type="text" id="nsfw_switcher_model_a" class="nsfw-switcher-input"
-                           placeholder="gpt-4">
-                    <div class="nsfw-switcher-help">检测到NSFW内容时切换到此模型</div>
-                </div>
-
-                <div class="nsfw-switcher-form-group">
-                    <label class="nsfw-switcher-label" for="nsfw_switcher_prompt">
-                        检测提示词
-                    </label>
-                    <textarea id="nsfw_switcher_prompt" class="nsfw-switcher-textarea">判断以下内容是否为NSFW（成人内容）：
-
-{content}
-
-请只输出1（是）或0（否）。</textarea>
-                </div>
-            </div>
-
-            <div class="nsfw-switcher-card">
-                <div class="nsfw-switcher-card-title">
-                    <i class="fa-solid fa-gear"></i>
-                    高级设置
-                </div>
-                
-                <div class="nsfw-switcher-checkbox" style="margin-bottom: 10px;">
-                    <input type="checkbox" id="nsfw_switcher_show_notification" checked>
-                    <div class="nsfw-switcher-checkbox-text">
-                        <div class="nsfw-switcher-checkbox-title">显示通知</div>
-                    </div>
-                </div>
-
-                <div class="nsfw-switcher-checkbox">
-                    <input type="checkbox" id="nsfw_switcher_debug_mode">
-                    <div class="nsfw-switcher-checkbox-text">
-                        <div class="nsfw-switcher-checkbox-title">调试模式</div>
-                    </div>
-                </div>
-            </div>
-
-            <div style="display: flex; gap: 10px; margin-bottom: 10px;">
-                <button id="nsfw_switcher_test_btn" class="nsfw-switcher-btn nsfw-switcher-btn-primary" style="flex: 1;">
-                    <i class="fa-solid fa-play"></i>
-                    测试API
-                </button>
-                <button id="nsfw_switcher_restore_btn" class="nsfw-switcher-btn nsfw-switcher-btn-secondary" style="flex: 1;">
-                    <i class="fa-solid fa-rotate-left"></i>
-                    恢复原模型
-                </button>
-            </div>
-
-            <button id="nsfw_switcher_reset_btn" class="nsfw-switcher-btn nsfw-switcher-btn-danger" style="width: 100%;">
-                <i class="fa-solid fa-trash"></i>
-                重置所有设置
-            </button>
-
-            <div class="nsfw-switcher-footer">
-                <a href="https://github.com/ICU-bit/sillytavern-auto-model-switcher/" target="_blank" style="color: #667eea;">
-                    GitHub 项目地址
-                </a>
-                <div>v0.0.4</div>
+            <div class="nsfw-switcher-form-group">
+                <label class="nsfw-switcher-label" for="nsfw_switcher_model_name">
+                    检测模型名称
+                </label>
+                <input type="text" id="nsfw_switcher_model_name" class="nsfw-switcher-input"
+                       placeholder="nsfw-detector" value="nsfw-detector">
             </div>
         </div>
+
+        <div class="nsfw-switcher-section">
+            <div class="nsfw-switcher-title">
+                <i class="fa-solid fa-robot"></i>
+                模型切换配置
+            </div>
+            
+            <div class="nsfw-switcher-form-group">
+                <label class="nsfw-switcher-label" for="nsfw_switcher_model_a">
+                    NSFW场景模型 <span class="required">*</span>
+                </label>
+                <input type="text" id="nsfw_switcher_model_a" class="nsfw-switcher-input"
+                       placeholder="gpt-4">
+                <div class="nsfw-switcher-help">检测到NSFW内容时切换到此模型</div>
+            </div>
+        </div>
+
+        <div class="nsfw-switcher-section">
+            <div class="nsfw-switcher-title">
+                <i class="fa-solid fa-gear"></i>
+                高级设置
+            </div>
+            
+            <div class="nsfw-switcher-checkbox" style="margin-bottom: 8px;">
+                <input type="checkbox" id="nsfw_switcher_show_notification" checked>
+                <div class="nsfw-switcher-checkbox-text">
+                    <div class="nsfw-switcher-checkbox-title">显示通知</div>
+                </div>
+            </div>
+
+            <div class="nsfw-switcher-checkbox">
+                <input type="checkbox" id="nsfw_switcher_debug_mode">
+                <div class="nsfw-switcher-checkbox-text">
+                    <div class="nsfw-switcher-checkbox-title">调试模式</div>
+                </div>
+            </div>
+        </div>
+
+        <div>
+            <button id="nsfw_switcher_test_btn" class="nsfw-switcher-btn nsfw-switcher-btn-primary">
+                <i class="fa-solid fa-play"></i> 测试API
+            </button>
+            <button id="nsfw_switcher_restore_btn" class="nsfw-switcher-btn nsfw-switcher-btn-secondary">
+                <i class="fa-solid fa-rotate-left"></i> 恢复原模型
+            </button>
+            <br>
+            <button id="nsfw_switcher_reset_btn" class="nsfw-switcher-btn nsfw-switcher-btn-danger">
+                <i class="fa-solid fa-trash"></i> 重置所有设置
+            </button>
+        </div>
     </div>
-    
-    <script>
-        // 悬浮按钮和面板交互
-        document.getElementById('nsfw_switcher_toggle').addEventListener('click', function() {
-            const panel = document.getElementById('nsfw_switcher_panel');
-            panel.classList.toggle('show');
-        });
-        
-        document.getElementById('nsfw_switcher_close').addEventListener('click', function() {
-            document.getElementById('nsfw_switcher_panel').classList.remove('show');
-        });
-    </script>
     `;
 }
 
-function addSettingsUI() {
-    document.body.insertAdjacentHTML('beforeend', createSettingsHtml());
-    loadSettings();
-    initSettingsListeners();
-    console.log('[NSFW模型切换器] 悬浮按钮和设置面板已添加');
+function addExtensionMenuItem() {
+    const menuItem = `
+        <div id="nsfw_switcher_menu_item" class="list-group-item flex-container flexGap5" title="NSFW模型切换器">
+            <div class="fa-solid fa-shield-halved extensionsMenuExtensionButton"></div>
+            <span>NSFW模型切换器</span>
+        </div>
+    `;
+    
+    $('#extensionsMenu').append(menuItem);
+    
+    $('#nsfw_switcher_menu_item').on('click', function() {
+        callGenericPopup(createSettingsHtml(), POPUP_TYPE.TEXT, 'NSFW模型切换器', { allowVerticalScrolling: true });
+        loadSettings();
+        initSettingsListeners();
+    });
+    
+    console.log('[NSFW模型切换器] 已添加到扩展菜单');
 }
 
 async function initPlugin() {
@@ -631,18 +524,28 @@ async function initPlugin() {
         console.error('[NSFW模型切换器] 注册事件失败:', e);
     }
 
-    addSettingsUI();
+    $(document).ready(() => {
+        setTimeout(() => {
+            if ($('#extensionsMenu').length > 0) {
+                addExtensionMenuItem();
+            } else {
+                console.warn('[NSFW模型切换器] 扩展菜单还未加载，稍后重试');
+                setTimeout(() => {
+                    if ($('#extensionsMenu').length > 0) {
+                        addExtensionMenuItem();
+                    } else {
+                        console.error('[NSFW模型切换器] 无法找到扩展菜单');
+                    }
+                }, 2000);
+            }
+        }, 100);
+    });
+
     console.log('[NSFW模型切换器] 插件初始化完成');
 }
 
 if (typeof jQuery !== 'undefined') {
     jQuery(() => {
-        initPlugin().catch(error => {
-            console.error('[NSFW模型切换器] 初始化失败:', error);
-        });
-    });
-} else if (typeof $ !== 'undefined') {
-    $(() => {
         initPlugin().catch(error => {
             console.error('[NSFW模型切换器] 初始化失败:', error);
         });
