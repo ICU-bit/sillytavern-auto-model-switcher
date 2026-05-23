@@ -6,5 +6,8 @@
     "js": "index.js",
     "author": "ICU-bit",
     "version": "0.1.0",
-    "homePage": "https://github.com/ICU-bit/sillytavern-auto-model-switcher"
+    "homePage": "https://github.com/ICU-bit/sillytavern-auto-model-switcher",
+    "hooks": {
+        "activate": "activate"
+    }
 }

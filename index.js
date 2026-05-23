@@ -620,11 +620,44 @@ async function onCharacterMessageRendered(messageId, type) {
     }
 }
 
+async function onMessageSent(messageId) {
+    try {
+        const settings = loadSettings();
+        if (!settings.enabled) {
+            return;
+        }
+
+        if (settings.debugMode) {
+            addLog('捕获用户发送消息: messageId=' + messageId, 'info');
+        }
+
+        // 当用户发送了一条新消息时，先检查上一条 AI 消息是否是 NSFW，或者直接用默认模型
+        if (isTemporarySwitch) {
+            const chat = window.chat || [];
+            let lastAI = null;
+            for (let i = chat.length - 1; i >= 0; i--) {
+                const message = chat[i];
+                if (message && !message.is_user && message.mes) {
+                    lastAI = message.mes;
+                    break;
+                }
+            }
+            if (!lastAI) {
+                await restoreOriginalModel();
+            }
+        }
+    } catch (e) {
+        addLog('处理用户消息发送事件失败: ' + e.message, 'error');
+    }
+}
+
 function registerEventListeners() {
     try {
         addLog('注册事件监听器...', 'info');
         // 监听生成开始事件，这是主要的切换时机
         eventSource.on(event_types.GENERATION_STARTED, onGenerationStarted);
+        // 同时也监听用户消息发送事件
+        eventSource.on(event_types.MESSAGE_SENT, onMessageSent);
         // 同时也监听消息渲染完成事件作为备用
         eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, onCharacterMessageRendered);
         addLog('事件监听器注册成功', 'success');
