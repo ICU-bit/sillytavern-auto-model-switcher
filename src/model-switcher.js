@@ -187,21 +187,17 @@ export async function switchToModel(targetModel, targetSource, targetApiUrl, tar
 
         oai_settings[targetField] = targetModel;
 
-        // 如果插件中填了目标 API 地址和密钥，覆盖目标来源下的配置
+        // 用插件配置覆盖目标来源的 API 地址和密钥（不管酒馆是否配置过）
         if (targetApiUrl) {
             const urlField = targetSource_ + '_api_url';
-            if (oai_settings[urlField] !== undefined) {
-                oai_settings[urlField] = targetApiUrl;
-                addLog('已设置目标 API 地址', 'info');
-            }
+            oai_settings[urlField] = targetApiUrl;
+            addLog('已设置目标 API 地址: ' + targetApiUrl, 'info');
         }
 
         if (targetApiKey) {
             const keyField = targetSource_ + '_api_key';
-            if (oai_settings[keyField] !== undefined) {
-                oai_settings[keyField] = targetApiKey;
-                addLog('已设置目标 API 密钥', 'info');
-            }
+            oai_settings[keyField] = targetApiKey;
+            addLog('已设置目标 API 密钥', 'info');
         }
 
         restorePresets();
