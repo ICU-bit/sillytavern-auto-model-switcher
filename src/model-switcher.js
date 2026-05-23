@@ -64,6 +64,15 @@ function takeSnapshot() {
             }
         }
 
+        const apiUrlField = snapshot.chat_completion_source + '_api_url';
+        const apiKeyField = snapshot.chat_completion_source + '_api_key';
+        if (oai_settings[apiUrlField] !== undefined) {
+            snapshot.api_url = oai_settings[apiUrlField];
+        }
+        if (oai_settings[apiKeyField] !== undefined) {
+            snapshot.api_key = oai_settings[apiKeyField];
+        }
+
         snapshot.streaming = oai_settings.streaming;
 
         return snapshot;
@@ -155,49 +164,42 @@ export async function switchToModel(targetModel, targetSource, targetApiUrl, tar
     try {
         saveSettingsSnapshot();
 
-        const settings = loadSettings();
-        const source = targetSource || settings.modelASource || 'openai';
-        const targetField = SOURCE_TO_FIELD[source];
+        const currentSource = oai_settings.chat_completion_source;
+        const currentField = SOURCE_TO_FIELD[currentSource];
 
-        if (!targetField) {
-            addLog('不支持的模型来源: ' + source, 'error');
+        if (!currentField) {
+            addLog('当前 API 来源不受支持: ' + currentSource, 'error');
             return false;
         }
 
-        addLog('切换模型到: ' + targetModel + ' (来源: ' + source + ')', 'success');
+        addLog('切换模型到: ' + targetModel + ' (保持来源: ' + currentSource + ')', 'success');
 
-        if (source !== oai_settings.chat_completion_source) {
-            oai_settings.chat_completion_source = source;
-            addLog('切换 API 来源到: ' + source, 'info');
-        }
-
-        // 应用原模型的预设，确保目标模型使用相同的 instruct/context/sysprompt
-        restorePresets();
-
-        oai_settings[targetField] = targetModel;
+        oai_settings[currentField] = targetModel;
 
         if (targetApiUrl) {
-            const urlField = source + '_api_url';
+            const urlField = currentSource + '_api_url';
             if (oai_settings[urlField] !== undefined) {
                 oai_settings[urlField] = targetApiUrl;
-                addLog('切换 API 地址', 'info');
+                addLog('临时覆盖 API 地址', 'info');
             }
         }
 
         if (targetApiKey) {
-            const keyField = source + '_api_key';
+            const keyField = currentSource + '_api_key';
             if (oai_settings[keyField] !== undefined) {
                 oai_settings[keyField] = targetApiKey;
-                addLog('切换 API 密钥', 'info');
+                addLog('临时覆盖 API 密钥', 'info');
             }
         }
+
+        restorePresets();
 
         if (saveSettingsDebounced) {
             saveSettingsDebounced();
         }
 
-        const settings_ = loadSettings();
-        if (settings_.showNotification && typeof toastr !== 'undefined') {
+        const settings = loadSettings();
+        if (settings.showNotification && typeof toastr !== 'undefined') {
             toastr.info('[NSFW 模型切换器] 已切换到: ' + targetModel);
         }
 
@@ -220,37 +222,43 @@ export async function restoreOriginalModel() {
     }
 
     try {
-        if (settingsSnapshot.chat_completion_source) {
-            oai_settings.chat_completion_source = settingsSnapshot.chat_completion_source;
+        const source = settingsSnapshot.chat_completion_source;
+        const field = SOURCE_TO_FIELD[source];
+
+        if (field && settingsSnapshot.model_fields[field] !== undefined) {
+            oai_settings[field] = settingsSnapshot.model_fields[field];
         }
 
-        for (const [field, value] of Object.entries(settingsSnapshot.model_fields)) {
-            oai_settings[field] = value;
+        if (settingsSnapshot.api_url !== undefined) {
+            const urlField = source + '_api_url';
+            oai_settings[urlField] = settingsSnapshot.api_url;
+            addLog('已恢复 API 地址', 'info');
+        }
+
+        if (settingsSnapshot.api_key !== undefined) {
+            const keyField = source + '_api_key';
+            oai_settings[keyField] = settingsSnapshot.api_key;
+            addLog('已恢复 API 密钥', 'info');
         }
 
         if (settingsSnapshot.streaming !== undefined) {
             oai_settings.streaming = settingsSnapshot.streaming;
         }
 
-        // 恢复原模型的预设
         restorePresets();
 
-        const source = settingsSnapshot.chat_completion_source;
-        const field = SOURCE_TO_FIELD[source];
         const restoredModel = field ? oai_settings[field] : '未知';
-
         addLog('已恢复原模型: ' + (restoredModel || '默认模型'), 'success');
 
         if (saveSettingsDebounced) {
             saveSettingsDebounced();
         }
 
-        const snapshotModel = restoredModel;
         settingsSnapshot = null;
 
         const settings = loadSettings();
         if (settings.showNotification && typeof toastr !== 'undefined') {
-            toastr.info('[NSFW 模型切换器] 已恢复原模型: ' + (snapshotModel || '默认模型'));
+            toastr.info('[NSFW 模型切换器] 已恢复原模型: ' + (restoredModel || '默认模型'));
         }
 
         return true;

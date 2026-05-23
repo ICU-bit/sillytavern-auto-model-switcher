@@ -7,6 +7,9 @@ import { addLog } from './logger.js';
 import { loadSettings } from './settings.js';
 import { getContext } from '../../../../extensions.js';
 
+// 检测输入最大字符数（轻量化模型上下文有限，超出会被截断或报错）
+const MAX_DETECT_CHARS = 3000;
+
 function normalizeApiUrl(url) {
     if (!url) return url;
     url = url.replace(/\/+$/, '');
@@ -33,14 +36,23 @@ export async function detectNSFW(content) {
     }
 
     try {
-        const prompt = '判断以下内容是否为 NSFW（成人/色情内容）。请只回复数字 1（是）或 0（否），不要输出任何其他内容：\n\n' + content;
+        // 截断过长内容，防止轻量化模型上下文溢出
+        let truncated = content;
+        if (truncated.length > MAX_DETECT_CHARS) {
+            truncated = truncated.slice(0, MAX_DETECT_CHARS);
+            if (debugMode) {
+                addLog('检测内容过长，已截断至 ' + MAX_DETECT_CHARS + ' 字符', 'info');
+            }
+        }
+
+        const prompt = '判断以下内容是否为 NSFW（成人/色情内容）。请只回复数字 1（是）或 0（否），不要输出任何其他内容：\n\n' + truncated;
 
         if (debugMode) {
             addLog('调用 NSFW 检测 API...', 'info');
         }
 
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000);
+        const timeoutId = setTimeout(() => controller.abort(), 30000);
 
         const apiUrl = normalizeApiUrl(nsfwApiUrl);
 
