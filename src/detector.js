@@ -100,7 +100,7 @@ export function getLastAiMessageText() {
         for (let i = chat.length - 1; i >= 0; i--) {
             const message = chat[i];
             if (message && !message.is_user && message.mes) {
-                return message.mes;
+                return extractContent(message.mes);
             }
         }
         return null;
@@ -108,6 +108,15 @@ export function getLastAiMessageText() {
         addLog('获取聊天记录失败: ' + e.message, 'error');
         return null;
     }
+}
+
+function extractContent(text) {
+    if (!text) return text;
+    const match = text.match(/<content>([\s\S]*?)<\/content>/);
+    if (match) {
+        return match[1].trim();
+    }
+    return text;
 }
 
 /**
