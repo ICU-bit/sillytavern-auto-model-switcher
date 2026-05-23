@@ -1,16 +1,15 @@
-console.log('[NSFW模型切换器] 插件加载中...');
-
-try {
-    import('./settings.js').then(({
+import('./settings.js').then(({
         loadSettings,
         saveSettings,
         getSetting,
         setSetting,
         initSettingsListeners,
         updateStatusDisplay,
-        getSettings
+        getSettings,
+        addLog,
+        clearLogs
     }) => {
-        console.log('[NSFW模型切换器] settings.js 加载成功');
+        addLog('插件加载中...', 'info');
         
         let originalModel = null;
         let isTemporarySwitch = false;
@@ -20,7 +19,7 @@ try {
 
         async function switchToModel(targetModel) {
             if (!targetModel) {
-                console.log('[NSFW模型切换器] 未指定切换模型');
+                addLog('未指定切换模型', 'warning');
                 return false;
             }
 
@@ -32,25 +31,25 @@ try {
 
                 if (!originalModel) {
                     originalModel = currentModel;
-                    console.log('[NSFW模型切换器] 保存原模型:', originalModel);
+                    addLog('保存原模型: ' + originalModel, 'info');
                     updateStatusDisplay(currentModel, originalModel, false);
                 }
 
                 if (currentModel === targetModel) {
-                    console.log('[NSFW模型切换器] 已是目标模型，无需切换');
+                    addLog('已是目标模型，无需切换', 'info');
                     isTemporarySwitch = true;
                     updateStatusDisplay(currentModel, originalModel, true);
                     return true;
                 }
 
-                console.log('[NSFW模型切换器] 切换模型:', currentModel, '->', targetModel);
+                addLog('切换模型: ' + currentModel + ' -> ' + targetModel, 'success');
 
                 const modelAApiUrl = getSetting('modelAApiUrl', '');
                 const modelAApiKey = getSetting('modelAApiKey', '');
                 const modelASource = getSetting('modelASource', 'openai');
 
                 if (modelAApiUrl) {
-                    console.log('[NSFW模型切换器] 使用独立API配置:', modelASource);
+                    addLog('使用独立API配置: ' + modelASource, 'info');
                     
                     oai_settings.chat_completion_source = chat_completion_sources[modelASource.toUpperCase()] || chat_completion_sources.OPENAI;
                     
@@ -81,7 +80,7 @@ try {
                         oai_settings.openrouter_model = targetModel;
                         $('#model_openrouter_select').val(targetModel).trigger('change');
                     } else {
-                        console.log('[NSFW模型切换器] 不支持的API来源:', currentSource);
+                        addLog('不支持的API来源: ' + currentSource, 'error');
                         return false;
                     }
                 }
@@ -96,7 +95,7 @@ try {
                 }
                 return true;
             } catch (e) {
-                console.error('[NSFW模型切换器] 切换模型失败:', e);
+                addLog('切换模型失败: ' + e.message, 'error');
                 return false;
             }
         }
@@ -112,13 +111,13 @@ try {
                 const currentModel = getChatCompletionModel();
 
                 if (currentModel === originalModel) {
-                    console.log('[NSFW模型切换器] 已是原模型，无需恢复');
+                    addLog('已是原模型，无需恢复', 'info');
                     isTemporarySwitch = false;
                     updateStatusDisplay(originalModel, originalModel, false);
                     return true;
                 }
 
-                console.log('[NSFW模型切换器] 恢复原模型:', currentModel, '->', originalModel);
+                addLog('恢复原模型: ' + currentModel + ' -> ' + originalModel, 'success');
 
                 const currentSource = oai_settings.chat_completion_source;
                 const modelAApiUrl = getSetting('modelAApiUrl', '');
@@ -145,7 +144,7 @@ try {
                         oai_settings.openrouter_model = originalModel;
                         $('#model_openrouter_select').val(originalModel).trigger('change');
                     } else {
-                        console.log('[NSFW模型切换器] 不支持的API来源:', currentSource);
+                        addLog('不支持的API来源: ' + currentSource, 'error');
                         return false;
                     }
                 }
@@ -162,7 +161,7 @@ try {
                 }
                 return true;
             } catch (e) {
-                console.error('[NSFW模型切换器] 恢复模型失败:', e);
+                addLog('恢复模型失败: ' + e.message, 'error');
                 return false;
             }
         }
@@ -175,7 +174,7 @@ try {
 
             if (!nsfwApiUrl) {
                 if (getSetting('debugMode', false)) {
-                    console.log('[NSFW模型切换器] 未配置NSFW检测API');
+                    addLog('未配置NSFW检测API', 'warning');
                 }
                 return null;
             }
@@ -209,12 +208,12 @@ try {
                 const result = data.choices?.[0]?.message?.content?.trim();
 
                 if (getSetting('debugMode', false)) {
-                    console.log('[NSFW模型切换器] 检测结果:', result);
+                    addLog('检测结果: ' + result, 'info');
                 }
 
                 return result === '1';
             } catch (error) {
-                console.error('[NSFW模型切换器] 检测失败:', error);
+                addLog('检测失败: ' + error.message, 'error');
                 return null;
             }
         }
@@ -234,7 +233,7 @@ try {
                 lastAiMessage = chat.mes;
                 
                 if (getSetting('debugMode', false)) {
-                    console.log('[NSFW模型切换器] 捕获AI回复:', chatId, chat.mes.substring(0, 50));
+                    addLog('捕获AI回复: ' + chat.mes.substring(0, 50) + '...', 'info');
                 }
 
                 const enabled = getSetting('enabled', true);
@@ -249,13 +248,13 @@ try {
                     if (modelA) {
                         await switchToModel(modelA);
                     } else {
-                        console.log('[NSFW模型切换器] 未配置模型A');
+                        addLog('未配置目标模型', 'warning');
                     }
                 } else if (nsfwDetected === false && isTemporarySwitch) {
                     await restoreOriginalModel();
                 }
             } catch (e) {
-                console.error('[NSFW模型切换器] 处理AI消息失败:', e);
+                addLog('处理AI消息失败: ' + e.message, 'error');
             }
         }
 
@@ -270,7 +269,7 @@ try {
                 }
 
                 if (getSetting('debugMode', false)) {
-                    console.log('[NSFW模型切换器] 用户发送消息:', mesId);
+                    addLog('用户发送消息: ' + mesId, 'info');
                 }
 
                 if (isTemporarySwitch && lastAiMessage) {
@@ -281,7 +280,7 @@ try {
                     }
                 }
             } catch (e) {
-                console.error('[NSFW模型切换器] 处理用户消息失败:', e);
+                addLog('处理用户消息失败: ' + e.message, 'error');
             }
         }
 
@@ -413,6 +412,22 @@ try {
                                 style="width: 100%; padding: 8px 12px; border: none; border-radius: 4px; font-size: 12px; font-weight: 500; cursor: pointer; background: #ffeaa7; color: #d63031;">
                             <i class="fa-solid fa-trash"></i> 重置所有设置
                         </button>
+
+                        <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #eee;">
+                            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+                                <div style="font-weight: 600; color: #333;">
+                                    <i class="fa-solid fa-scroll" style="margin-right: 8px;"></i>运行日志
+                                </div>
+                                <button id="nsfw_switcher_clear_logs_btn" 
+                                        style="padding: 4px 8px; border: none; border-radius: 3px; font-size: 11px; cursor: pointer; background: #f5f5f5; color: #666;">
+                                    <i class="fa-solid fa-trash"></i> 清空
+                                </button>
+                            </div>
+                            <div id="nsfw_switcher_logs" 
+                                 style="max-height: 200px; overflow-y: auto; background: #fafafa; border-radius: 4px; padding: 10px; font-family: monospace;">
+                                <div style="color: #999; font-size: 12px; text-align: center;">暂无日志</div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -420,13 +435,13 @@ try {
         }
 
         function addSettingsPanel() {
-            console.log('[NSFW模型切换器] 开始添加设置面板...');
+            addLog('开始添加设置面板...', 'info');
             
             const $extensionsSettings = $('#extensions_settings');
-            console.log('[NSFW模型切换器] extensions_settings元素:', $extensionsSettings.length);
+            addLog('extensions_settings元素: ' + $extensionsSettings.length, 'info');
             
             if ($extensionsSettings.length === 0) {
-                console.warn('[NSFW模型切换器] extensions_settings元素不存在，尝试添加到body');
+                addLog('extensions_settings元素不存在，尝试添加到body', 'warning');
                 const $panel = $(createSettingsHtml());
                 $panel.css({
                     position: 'fixed',
@@ -441,31 +456,36 @@ try {
                     overflowY: 'auto'
                 });
                 $('body').append($panel);
-                console.log('[NSFW模型切换器] 设置面板已添加到body');
+                addLog('设置面板已添加到body', 'success');
             } else {
                 try {
                     const settingsHtml = createSettingsHtml();
-                    console.log('[NSFW模型切换器] 设置HTML已创建');
+                    addLog('设置HTML已创建', 'info');
                     
                     const $panel = $(settingsHtml);
-                    console.log('[NSFW模型切换器] jQuery对象已创建');
+                    addLog('jQuery对象已创建', 'info');
                     
                     $extensionsSettings.append($panel);
-                    console.log('[NSFW模型切换器] 设置面板已添加到extensions_settings');
+                    addLog('设置面板已添加到extensions_settings', 'success');
                 } catch (e) {
-                    console.error('[NSFW模型切换器] 添加设置面板失败:', e);
+                    addLog('添加设置面板失败: ' + e.message, 'error');
                 }
             }
             
             loadSettings();
-            console.log('[NSFW模型切换器] 设置已加载');
+            addLog('设置已加载', 'info');
             
             initSettingsListeners();
-            console.log('[NSFW模型切换器] 设置监听器已初始化');
+            addLog('设置监听器已初始化', 'info');
+
+            $('#nsfw_switcher_clear_logs_btn').on('click', () => {
+                clearLogs();
+                addLog('日志已清空', 'info');
+            });
         }
 
         async function registerEventListeners() {
-            console.log('[NSFW模型切换器] 尝试注册事件监听...');
+            addLog('尝试注册事件监听...', 'info');
             
             try {
                 const module = await import('../../extensions.js');
@@ -475,10 +495,9 @@ try {
                 eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, onAiMessageRendered);
                 eventSource.on(event_types.MESSAGE_SENT, onUserMessageSent);
                 eventSource.on(event_types.CHAT_CHANGED, onChatChanged);
-                console.log('[NSFW模型切换器] 事件监听注册成功');
+                addLog('事件监听注册成功', 'success');
             } catch (e) {
-                console.warn('[NSFW模型切换器] 注册事件失败:', e.message);
-                console.log('[NSFW模型切换器] 将使用定时器轮询方式');
+                addLog('注册事件失败: ' + e.message + '，将使用定时器轮询方式', 'warning');
                 
                 setTimeout(() => {
                     registerEventListeners();
@@ -487,40 +506,43 @@ try {
         }
 
         async function initPlugin() {
-            console.log('[NSFW模型切换器] 开始初始化...');
+            addLog('开始初始化...', 'info');
             
             const savedOriginalModel = getSetting('originalModel', null);
             if (savedOriginalModel) {
                 originalModel = savedOriginalModel;
-                console.log('[NSFW模型切换器] 已恢复原模型:', originalModel);
+                addLog('已恢复原模型: ' + originalModel, 'info');
             }
             
             registerEventListeners();
 
             if (typeof jQuery !== 'undefined') {
-                console.log('[NSFW模型切换器] jQuery已加载');
+                addLog('jQuery已加载', 'info');
                 
                 $(document).ready(() => {
-                    console.log('[NSFW模型切换器] DOM已就绪');
+                    addLog('DOM已就绪', 'info');
                     
                     setTimeout(() => {
-                        console.log('[NSFW模型切换器] 尝试添加设置面板...');
+                        addLog('尝试添加设置面板...', 'info');
                         addSettingsPanel();
                     }, 500);
                 });
             } else {
-                console.error('[NSFW模型切换器] jQuery未加载');
+                addLog('jQuery未加载', 'error');
             }
 
-            console.log('[NSFW模型切换器] 插件初始化完成');
+            addLog('插件初始化完成', 'success');
         }
 
         initPlugin().catch(error => {
-            console.error('[NSFW模型切换器] 初始化失败:', error);
+            addLog('初始化失败: ' + error.message, 'error');
         });
 
     }).catch(error => {
         console.error('[NSFW模型切换器] 加载settings.js失败:', error);
+        if (typeof addLog === 'function') {
+            addLog('加载settings.js失败: ' + error.message, 'error');
+        }
     });
 } catch (e) {
     console.error('[NSFW模型切换器] 顶层错误:', e);

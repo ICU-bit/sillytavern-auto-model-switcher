@@ -15,6 +15,59 @@ const defaultSettings = {
     maxLength: 2000
 };
 
+let logs = [];
+
+export function addLog(message, type = 'info') {
+    const logEntry = {
+        timestamp: new Date().toLocaleTimeString('zh-CN'),
+        message,
+        type
+    };
+    logs.unshift(logEntry);
+    
+    if (logs.length > 50) {
+        logs = logs.slice(0, 50);
+    }
+    
+    console.log(`[NSFW模型切换器] ${message}`);
+    
+    updateLogDisplay();
+}
+
+export function clearLogs() {
+    logs = [];
+    updateLogDisplay();
+}
+
+export function getLogs() {
+    return logs;
+}
+
+function updateLogDisplay() {
+    const $logContainer = $('#nsfw_switcher_logs');
+    if ($logContainer.length === 0) return;
+    
+    let html = '';
+    logs.forEach(log => {
+        const typeClass = {
+            info: 'color: #3498db;',
+            success: 'color: #27ae60;',
+            warning: 'color: #f39c12;',
+            error: 'color: #e74c3c;'
+        };
+        
+        html += `
+            <div style="display: flex; gap: 8px; padding: 4px 0; font-size: 12px;">
+                <span style="color: #999; font-family: monospace;">${log.timestamp}</span>
+                <span style="${typeClass[log.type] || typeClass.info}">[${log.type.toUpperCase()}]</span>
+                <span style="color: #333;">${log.message}</span>
+            </div>
+        `;
+    });
+    
+    $logContainer.html(html || '<div style="color: #999; font-size: 12px; padding: 10px; text-align: center;">暂无日志</div>');
+}
+
 export function loadSettings() {
     try {
         const settings = JSON.parse(localStorage.getItem('extension_settings') || '{}');
@@ -127,8 +180,11 @@ export function initSettingsListeners() {
         
         if (!apiUrl) {
             showToast('请先配置NSFW检测API地址', 'error');
+            addLog('测试失败：未配置API地址', 'warning');
             return;
         }
+        
+        addLog('开始测试NSFW检测API...', 'info');
         
         try {
             const response = await fetch(apiUrl, {
@@ -157,13 +213,17 @@ export function initSettingsListeners() {
             
             if (result === '0') {
                 showToast('✅ 测试成功！API连接正常，返回结果：正常内容', 'success');
+                addLog('测试成功！检测结果：正常内容 (0)', 'success');
             } else if (result === '1') {
                 showToast('⚠️ 测试成功！但模型判断为NSFW内容', 'warning');
+                addLog('测试成功！检测结果：NSFW内容 (1)', 'warning');
             } else {
                 showToast(`❌ 测试失败：无法解析结果 "${result}"`, 'error');
+                addLog('测试失败：无法解析结果 "' + result + '"', 'error');
             }
         } catch (error) {
             showToast(`❌ 测试失败：${error.message}`, 'error');
+            addLog('测试失败：' + error.message, 'error');
         }
     });
     
