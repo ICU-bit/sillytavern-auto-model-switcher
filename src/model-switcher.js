@@ -164,31 +164,43 @@ export async function switchToModel(targetModel, targetSource, targetApiUrl, tar
     try {
         saveSettingsSnapshot();
 
-        const currentSource = oai_settings.chat_completion_source;
-        const currentField = SOURCE_TO_FIELD[currentSource];
-
-        if (!currentField) {
-            addLog('当前 API 来源不受支持: ' + currentSource, 'error');
+        const settings = loadSettings();
+        const targetSource_ = targetSource || settings.modelASource;
+        if (!targetSource_) {
+            addLog('未指定切换目标 API 来源', 'error');
             return false;
         }
 
-        addLog('切换模型到: ' + targetModel + ' (保持来源: ' + currentSource + ')', 'success');
+        const targetField = SOURCE_TO_FIELD[targetSource_];
+        if (!targetField) {
+            addLog('不支持的切换目标来源: ' + targetSource_, 'error');
+            return false;
+        }
 
-        oai_settings[currentField] = targetModel;
+        addLog('切换模型到: ' + targetModel + ' (来源: ' + targetSource_ + ')', 'success');
 
+        // 切换 API 来源
+        if (targetSource_ !== oai_settings.chat_completion_source) {
+            oai_settings.chat_completion_source = targetSource_;
+            addLog('切换 API 来源: ' + targetSource_, 'info');
+        }
+
+        oai_settings[targetField] = targetModel;
+
+        // 如果插件中填了目标 API 地址和密钥，覆盖目标来源下的配置
         if (targetApiUrl) {
-            const urlField = currentSource + '_api_url';
+            const urlField = targetSource_ + '_api_url';
             if (oai_settings[urlField] !== undefined) {
                 oai_settings[urlField] = targetApiUrl;
-                addLog('临时覆盖 API 地址', 'info');
+                addLog('已设置目标 API 地址', 'info');
             }
         }
 
         if (targetApiKey) {
-            const keyField = currentSource + '_api_key';
+            const keyField = targetSource_ + '_api_key';
             if (oai_settings[keyField] !== undefined) {
                 oai_settings[keyField] = targetApiKey;
-                addLog('临时覆盖 API 密钥', 'info');
+                addLog('已设置目标 API 密钥', 'info');
             }
         }
 
@@ -198,8 +210,8 @@ export async function switchToModel(targetModel, targetSource, targetApiUrl, tar
             saveSettingsDebounced();
         }
 
-        const settings = loadSettings();
-        if (settings.showNotification && typeof toastr !== 'undefined') {
+        const _settings = loadSettings();
+        if (_settings.showNotification && typeof toastr !== 'undefined') {
             toastr.info('[NSFW 模型切换器] 已切换到: ' + targetModel);
         }
 
@@ -225,16 +237,25 @@ export async function restoreOriginalModel() {
         const source = settingsSnapshot.chat_completion_source;
         const field = SOURCE_TO_FIELD[source];
 
+        // 恢复 API 来源
+        if (source !== oai_settings.chat_completion_source) {
+            oai_settings.chat_completion_source = source;
+            addLog('恢复 API 来源: ' + source, 'info');
+        }
+
+        // 恢复模型名
         if (field && settingsSnapshot.model_fields[field] !== undefined) {
             oai_settings[field] = settingsSnapshot.model_fields[field];
         }
 
+        // 恢复 API 地址
         if (settingsSnapshot.api_url !== undefined) {
             const urlField = source + '_api_url';
             oai_settings[urlField] = settingsSnapshot.api_url;
             addLog('已恢复 API 地址', 'info');
         }
 
+        // 恢复 API 密钥
         if (settingsSnapshot.api_key !== undefined) {
             const keyField = source + '_api_key';
             oai_settings[keyField] = settingsSnapshot.api_key;
@@ -256,8 +277,8 @@ export async function restoreOriginalModel() {
 
         settingsSnapshot = null;
 
-        const settings = loadSettings();
-        if (settings.showNotification && typeof toastr !== 'undefined') {
+        const _settings = loadSettings();
+        if (_settings.showNotification && typeof toastr !== 'undefined') {
             toastr.info('[NSFW 模型切换器] 已恢复原模型: ' + (restoredModel || '默认模型'));
         }
 
