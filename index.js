@@ -302,7 +302,38 @@ function initSettingsListeners() {
 }
 
 let originalModel = null;
+let originalSource = null;
+let originalApiUrl = null;
+let originalApiKey = null;
 let isTemporarySwitch = false;
+
+// 模型来源到字段名的映射
+const sourceToFieldMap = {
+    'openai': 'openai_model',
+    'claude': 'claude_model',
+    'openrouter': 'openrouter_model',
+    'custom': 'custom_model',
+    'ai21': 'ai21_model',
+    'makersuite': 'google_model',
+    'vertexai': 'vertexai_model',
+    'mistralai': 'mistralai_model',
+    'cohere': 'cohere_model',
+    'perplexity': 'perplexity_model',
+    'groq': 'groq_model',
+    'electronhub': 'electronhub_model',
+    'chutes': 'chutes_model',
+    'nanogpt': 'nanogpt_model',
+    'deepseek': 'deepseek_model',
+    'aimlapi': 'aimlapi_model',
+    'xai': 'xai_model',
+    'pollinations': 'pollinations_model',
+    'cometapi': 'cometapi_model',
+    'moonshot': 'moonshot_model',
+    'fireworks': 'fireworks_model',
+    'azure_openai': 'azure_openai_model',
+    'zai': 'zai_model',
+    'siliconflow': 'siliconflow_model'
+};
 
 async function detectNSFW(content) {
     const settings = loadSettings();
@@ -310,16 +341,16 @@ async function detectNSFW(content) {
 
     if (!nsfwApiUrl) {
         if (debugMode) {
-            addLog('未配置NSFW检测API', 'warning');
+            addLog('未配置 NSFW 检测 API', 'warning');
         }
         return null;
     }
 
     try {
-        const prompt = '判断以下内容是否为NSFW（成人内容）：\n\n' + content + '\n\n请只输出1（是）或0（否）';
+        const prompt = '判断以下内容是否为 NSFW（成人内容）：\n\n' + content + '\n\n请只输出 1（是）或 0（否）';
         
         if (debugMode) {
-            addLog('调用NSFW检测API...', 'info');
+            addLog('调用 NSFW 检测 API...', 'info');
         }
 
         const response = await fetch(nsfwApiUrl, {
@@ -340,7 +371,7 @@ async function detectNSFW(content) {
         });
 
         if (!response.ok) {
-            throw new Error('API请求失败: ' + response.status);
+            throw new Error('API 请求失败: ' + response.status);
         }
 
         const data = await response.json();
@@ -350,7 +381,7 @@ async function detectNSFW(content) {
             addLog('检测结果: ' + result, 'info');
         }
 
-        return result === '1';
+        return result === '1' || result === 'true' || result === 1;
     } catch (error) {
         addLog('检测失败: ' + error.message, 'error');
         return null;
@@ -358,27 +389,39 @@ async function detectNSFW(content) {
 }
 
 async function testNsfwApi() {
-    const testContent = '这是一个测试内容。请判断这个内容是否包含NSFW元素。';
+    const testContent = '这是一个测试内容。请判断这个内容是否包含 NSFW 元素。';
     const result = await detectNSFW(testContent);
     
     if (result === null) {
         if (typeof toastr !== 'undefined') {
-            toastr.error('API测试失败，请检查配置');
+            toastr.error('API 测试失败，请检查配置');
         }
-    } else if (result === '0' || result === 0 || result === false) {
+    } else if (result === false) {
         if (typeof toastr !== 'undefined') {
-            toastr.success('API测试成功！返回结果：正常内容');
+            toastr.success('API 测试成功！返回结果：正常内容');
         }
-        addLog('API测试成功！返回结果：正常内容', 'success');
+        addLog('API 测试成功！返回结果：正常内容', 'success');
     } else {
         if (typeof toastr !== 'undefined') {
-            toastr.warning('API测试成功！但模型判断为NSFW内容');
+            toastr.warning('API 测试成功！但模型判断为 NSFW 内容');
         }
-        addLog('API测试成功！但模型判断为NSFW内容', 'warning');
+        addLog('API 测试成功！但模型判断为 NSFW 内容', 'warning');
     }
 }
 
-async function switchToModel(targetModel) {
+function getCurrentModelFromOaiSettings(oaiSettings) {
+    const source = oaiSettings.chat_completion_source;
+    const fieldName = sourceToFieldMap[source];
+    if (fieldName && oaiSettings[fieldName]) {
+        return {
+            model: oaiSettings[fieldName],
+            source: source
+        };
+    }
+    return null;
+}
+
+async function switchToModel(targetModel, targetSource, targetApiUrl, targetApiKey) {
     if (!targetModel) {
         addLog('未指定切换模型', 'warning');
         return false;
@@ -387,24 +430,58 @@ async function switchToModel(targetModel) {
     try {
         const settings = loadSettings();
         
-        if (!originalModel) {
-            addLog('保存原模型', 'info');
+        // 访问 SillyTavern 的 oai_settings
+        if (!window.oai_settings) {
+            addLog('无法访问 oai_settings 对象', 'error');
+            return false;
+        }
+
+        // 保存原始设置（如果还没保存）
+        if (!originalModel && !isTemporarySwitch) {
+            const currentModelInfo = getCurrentModelFromOaiSettings(window.oai_settings);
+            if (currentModelInfo) {
+                originalModel = currentModelInfo.model;
+                originalSource = currentModelInfo.source;
+                addLog('保存原模型: ' + originalModel + ' (来源: ' + originalSource + ')', 'info');
+            }
         }
 
         addLog('切换模型到: ' + targetModel, 'success');
 
-        const modelAApiUrl = settings.modelAApiUrl;
-        const modelAApiKey = settings.modelAApiKey;
-        const modelASource = settings.modelASource;
+        // 确定目标来源
+        const source = targetSource || settings.modelASource || 'openai';
+        const targetField = sourceToFieldMap[source];
+        
+        if (!targetField) {
+            addLog('不支持的模型来源: ' + source, 'error');
+            return false;
+        }
 
-        if (modelAApiUrl) {
-            addLog('使用独立API配置: ' + modelASource, 'info');
+        // 保存原始 API 配置（如果需要）
+        if (targetApiUrl || targetApiKey) {
+            // 这里需要根据不同来源保存相应的 API 配置
+            // 为简单起见，我们先只处理模型切换
+            addLog('注意：API 配置切换功能暂未完全实现', 'warning');
+        }
+
+        // 切换来源（如果需要）
+        if (source !== window.oai_settings.chat_completion_source) {
+            window.oai_settings.chat_completion_source = source;
+            addLog('切换来源到: ' + source, 'info');
+        }
+
+        // 切换模型
+        window.oai_settings[targetField] = targetModel;
+
+        // 保存设置（如果有 saveSettingsDebounced 函数）
+        if (window.saveSettingsDebounced) {
+            window.saveSettingsDebounced();
         }
 
         isTemporarySwitch = true;
         
         if (settings.showNotification && typeof toastr !== 'undefined') {
-            toastr.info('[NSFW模型切换器] 已切换到: ' + targetModel);
+            toastr.info('[NSFW 模型切换器] 已切换到: ' + targetModel);
         }
         return true;
     } catch (e) {
@@ -423,15 +500,40 @@ async function restoreOriginalModel() {
     }
 
     try {
-        addLog('恢复原模型: ' + originalModel, 'success');
+        // 访问 SillyTavern 的 oai_settings
+        if (!window.oai_settings) {
+            addLog('无法访问 oai_settings 对象', 'error');
+            return false;
+        }
+
+        addLog('恢复原模型: ' + originalModel + ' (来源: ' + originalSource + ')', 'success');
+
+        // 恢复来源
+        if (originalSource) {
+            window.oai_settings.chat_completion_source = originalSource;
+        }
+
+        // 恢复模型
+        const targetField = sourceToFieldMap[originalSource || 'openai'];
+        if (targetField) {
+            window.oai_settings[targetField] = originalModel;
+        }
+
+        // 保存设置
+        if (window.saveSettingsDebounced) {
+            window.saveSettingsDebounced();
+        }
 
         isTemporarySwitch = false;
         const model = originalModel;
         originalModel = null;
+        originalSource = null;
+        originalApiUrl = null;
+        originalApiKey = null;
 
         const settings = loadSettings();
         if (settings.showNotification && typeof toastr !== 'undefined') {
-            toastr.info('[NSFW模型切换器] 已恢复原模型: ' + (model || '默认模型'));
+            toastr.info('[NSFW 模型切换器] 已恢复原模型: ' + (model || '默认模型'));
         }
         return true;
     } catch (e) {
@@ -452,22 +554,27 @@ async function onCharacterMessageRendered(data) {
         const content = data.mes || data.message || '';
         
         if (settings.debugMode) {
-            addLog('捕获AI回复', 'info');
+            addLog('捕获 AI 回复', 'info');
         }
 
         const nsfwDetected = await detectNSFW(content);
 
         if (nsfwDetected === true) {
             if (settings.modelA) {
-                await switchToModel(settings.modelA);
+                await switchToModel(
+                    settings.modelA,
+                    settings.modelASource,
+                    settings.modelAApiUrl,
+                    settings.modelAApiKey
+                );
             } else {
-                addLog('未配置目标模型A', 'warning');
+                addLog('未配置目标模型 A', 'warning');
             }
         } else if (nsfwDetected === false && isTemporarySwitch) {
             await restoreOriginalModel();
         }
     } catch (e) {
-        addLog('处理AI消息失败: ' + e.message, 'error');
+        addLog('处理 AI 消息失败: ' + e.message, 'error');
     }
 }
 
