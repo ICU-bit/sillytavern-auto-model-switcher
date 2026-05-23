@@ -322,12 +322,12 @@ try {
 
                         <div style="margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #eee;">
                             <div style="font-weight: 600; color: #333; margin-bottom: 10px;">
-                                <i class="fa-solid fa-server" style="margin-right: 8px;"></i>API配置
+                                <i class="fa-solid fa-microscope" style="margin-right: 8px;"></i>轻量化检测模型（判断NSFW）
                             </div>
                             
                             <div style="margin-bottom: 12px;">
                                 <label style="display: block; font-weight: 500; color: #555; margin-bottom: 5px; font-size: 13px;">
-                                    检测API地址 <span style="color: #e74c3c;">*</span>
+                                    API地址 <span style="color: #e74c3c;">*</span>
                                 </label>
                                 <input type="text" id="nsfw_switcher_api_url" 
                                        style="width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; box-sizing: border-box;"
@@ -345,7 +345,7 @@ try {
 
                             <div style="margin-bottom: 12px;">
                                 <label style="display: block; font-weight: 500; color: #555; margin-bottom: 5px; font-size: 13px;">
-                                    检测模型名称
+                                    模型名称
                                 </label>
                                 <input type="text" id="nsfw_switcher_model_name" 
                                        style="width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; box-sizing: border-box;"
@@ -355,12 +355,12 @@ try {
 
                         <div style="margin-bottom: 15px;">
                             <div style="font-weight: 600; color: #333; margin-bottom: 10px;">
-                                <i class="fa-solid fa-robot" style="margin-right: 8px;"></i>模型切换配置
+                                <i class="fa-solid fa-arrow-right-arrow-left" style="margin-right: 8px;"></i>切换目标模型（NSFW场景使用）
                             </div>
                             
                             <div style="margin-bottom: 12px;">
                                 <label style="display: block; font-weight: 500; color: #555; margin-bottom: 5px; font-size: 13px;">
-                                    NSFW场景模型 <span style="color: #e74c3c;">*</span>
+                                    目标模型名称 <span style="color: #e74c3c;">*</span>
                                 </label>
                                 <input type="text" id="nsfw_switcher_model_a" 
                                        style="width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; box-sizing: border-box;"
@@ -369,7 +369,7 @@ try {
 
                             <div style="margin-bottom: 12px;">
                                 <label style="display: block; font-weight: 500; color: #555; margin-bottom: 5px; font-size: 13px;">
-                                    模型A API地址
+                                    目标模型API地址
                                 </label>
                                 <input type="text" id="nsfw_switcher_model_a_api_url" 
                                        style="width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; box-sizing: border-box;"
@@ -378,7 +378,7 @@ try {
 
                             <div style="margin-bottom: 12px;">
                                 <label style="display: block; font-weight: 500; color: #555; margin-bottom: 5px; font-size: 13px;">
-                                    模型A API密钥
+                                    目标模型API密钥
                                 </label>
                                 <input type="password" id="nsfw_switcher_model_a_api_key" 
                                        style="width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; box-sizing: border-box;"
