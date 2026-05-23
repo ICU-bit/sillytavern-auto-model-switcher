@@ -25,7 +25,7 @@ import {
     updateStatusIndicator,
 } from './src/settings.js';
 import { createStateMachine } from './src/state.js';
-import { detectNSFW, getLastAiMessageText, testNsfwApi } from './src/detector.js';
+import { detectNSFW, getLastAiMessageText, getMessageTextById, testNsfwApi } from './src/detector.js';
 import { switchToModel, restoreOriginalModel, saveSettingsSnapshot, clearSettingsSnapshot } from './src/model-switcher.js';
 
 // ── 状态 ──────────────────────────────────────────────
@@ -263,7 +263,7 @@ async function onMessageRendered(messageId, type) {
 
     detectionInProgress = true;
     try {
-        const content = getLastAiMessageText();
+        const content = getMessageTextById(messageId) || getLastAiMessageText();
         if (!content) {
             if (settings.debugMode) addLog('未找到 AI 消息内容', 'info');
             return;

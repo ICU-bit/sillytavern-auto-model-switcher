@@ -5,6 +5,7 @@
 
 import { addLog } from './logger.js';
 import { loadSettings } from './settings.js';
+import { getContext } from '../../../../extensions.js';
 
 function normalizeApiUrl(url) {
     if (!url) return url;
@@ -96,7 +97,8 @@ export async function detectNSFW(content) {
  */
 export function getLastAiMessageText() {
     try {
-        const chat = window.chat || [];
+        const context = getContext();
+        const chat = context?.chat || [];
         for (let i = chat.length - 1; i >= 0; i--) {
             const message = chat[i];
             if (message && !message.is_user && message.mes) {
@@ -106,6 +108,21 @@ export function getLastAiMessageText() {
         return null;
     } catch (e) {
         addLog('获取聊天记录失败: ' + e.message, 'error');
+        return null;
+    }
+}
+
+export function getMessageTextById(messageId) {
+    try {
+        const context = getContext();
+        const chat = context?.chat || [];
+        const message = chat[messageId];
+        if (message && !message.is_user && message.mes) {
+            return extractContent(message.mes);
+        }
+        return null;
+    } catch (e) {
+        addLog('获取消息失败: ' + e.message, 'error');
         return null;
     }
 }
