@@ -14,7 +14,7 @@
  */
 
 import { eventSource, event_types } from '../../../../script.js';
-import { extension_settings, loadExtensionSettings } from '../../../extensions.js';
+import { extension_settings } from '../../../extensions.js';
 import { addLog, clearLogs, setRenderCallback, renderLogsHtml } from './src/logger.js';
 import {
     EXTENSION_NAME,
@@ -394,7 +394,9 @@ function setupLogRendering() {
 // ── 初始化入口 ────────────────────────────────────────
 
 jQuery(async () => {
-    await loadExtensionSettings(EXTENSION_NAME);
+    extension_settings[EXTENSION_NAME] = extension_settings[EXTENSION_NAME] || {};
+    Object.assign(DEFAULT_SETTINGS, extension_settings[EXTENSION_NAME]);
+    extension_settings[EXTENSION_NAME] = { ...DEFAULT_SETTINGS, ...extension_settings[EXTENSION_NAME] };
 
     addLog('插件正在激活...', 'info');
 

@@ -3,7 +3,8 @@
  * 使用 SillyTavern 标准扩展设置 API
  */
 
-import { extension_settings, saveSettingsDebounced } from '../../../../extensions.js';
+import { extension_settings } from '../../../../extensions.js';
+import { saveSettingsDebounced } from '../../../../../script.js';
 
 export const EXTENSION_NAME = 'nsfw-model-switcher';
 
