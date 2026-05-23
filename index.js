@@ -14,7 +14,7 @@
  */
 
 import { eventSource, event_types } from '../../../../script.js';
-import { extension_settings } from '../../../extensions.js';
+import { extension_settings, loadExtensionSettings } from '../../../extensions.js';
 import { addLog, clearLogs, setRenderCallback, renderLogsHtml } from './src/logger.js';
 import {
     EXTENSION_NAME,
@@ -393,7 +393,9 @@ function setupLogRendering() {
 
 // ── 初始化入口 ────────────────────────────────────────
 
-async function init() {
+jQuery(async () => {
+    await loadExtensionSettings(EXTENSION_NAME);
+
     addLog('插件正在激活...', 'info');
 
     setupLogRendering();
@@ -405,12 +407,9 @@ async function init() {
 
     registerEventListeners();
 
-    // 如果 EXTENSION_SETTINGS_LOADED 已经在注册前触发，手动同步
     if (!isReady && extension_settings[EXTENSION_NAME]) {
         onSettingsLoaded();
     }
 
     addLog('插件加载完成！', 'success');
-}
-
-export { init };
+});

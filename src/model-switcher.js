@@ -3,9 +3,19 @@
  * 负责安全的模型切换，包含 oai_settings 快照保存和恢复
  */
 
-import { saveSettingsDebounced, oai_settings } from '../../../../../script.js';
+import { saveSettingsDebounced } from '../../../../../script.js';
+import { getContext } from '../../../../extensions.js';
 import { addLog } from './logger.js';
 import { loadSettings } from './settings.js';
+
+function getOaiSettings() {
+    try {
+        const context = getContext();
+        if (context?.oai_settings) return context.oai_settings;
+    } catch (_) {}
+    if (typeof window.oai_settings !== 'undefined') return window.oai_settings;
+    return null;
+}
 
 /**
  * 模型来源到 oai_settings 字段名的映射
@@ -50,6 +60,7 @@ let settingsSnapshot = null;
  * @returns {object|null}
  */
 function takeSnapshot() {
+    const oai_settings = getOaiSettings();
     if (!oai_settings) {
         addLog('无法创建快照：oai_settings 不可用', 'error');
         return null;
@@ -61,14 +72,12 @@ function takeSnapshot() {
             model_fields: {},
         };
 
-        // 保存所有模型字段
         for (const [source, field] of Object.entries(SOURCE_TO_FIELD)) {
             if (oai_settings[field] !== undefined) {
                 snapshot.model_fields[field] = oai_settings[field];
             }
         }
 
-        // 额外保存一些关键设置
         snapshot.streaming = oai_settings.streaming;
 
         return snapshot;
@@ -83,6 +92,7 @@ function takeSnapshot() {
  * @returns {string|null}
  */
 function getCurrentModelField() {
+    const oai_settings = getOaiSettings();
     if (!oai_settings) return null;
     const source = oai_settings.chat_completion_source;
     return SOURCE_TO_FIELD[source] || null;
@@ -93,6 +103,7 @@ function getCurrentModelField() {
  * @returns {{ model: string, source: string }|null}
  */
 export function getCurrentModelInfo() {
+    const oai_settings = getOaiSettings();
     if (!oai_settings) return null;
 
     const source = oai_settings.chat_completion_source;
@@ -143,13 +154,13 @@ export async function switchToModel(targetModel, targetSource, targetApiUrl, tar
         return false;
     }
 
+    const oai_settings = getOaiSettings();
     if (!oai_settings) {
         addLog('无法切换：oai_settings 不可用', 'error');
         return false;
     }
 
     try {
-        // 先保存快照（首次切换才生效）
         saveSettingsSnapshot();
 
         const settings = loadSettings();
@@ -163,17 +174,13 @@ export async function switchToModel(targetModel, targetSource, targetApiUrl, tar
 
         addLog('切换模型到: ' + targetModel + ' (来源: ' + source + ')', 'success');
 
-        // 切换来源（如果需要）
         if (source !== oai_settings.chat_completion_source) {
             oai_settings.chat_completion_source = source;
             addLog('切换 API 来源到: ' + source, 'info');
         }
 
-        // 切换模型
         oai_settings[targetField] = targetModel;
 
-        // 如果有特定的 API URL/Key，设置它们
-        // 注意：不同来源的 API 配置字段不同，这里只处理常见情况
         if (targetApiUrl) {
             const urlField = source + '_api_url';
             if (oai_settings[urlField] !== undefined) {
@@ -190,7 +197,6 @@ export async function switchToModel(targetModel, targetSource, targetApiUrl, tar
             }
         }
 
-        // 保存设置
         if (saveSettingsDebounced) {
             saveSettingsDebounced();
         }
@@ -217,40 +223,35 @@ export async function restoreOriginalModel() {
         return false;
     }
 
+    const oai_settings = getOaiSettings();
     if (!oai_settings) {
         addLog('无法恢复：oai_settings 不可用', 'error');
         return false;
     }
 
     try {
-        // 从快照恢复来源
         if (settingsSnapshot.chat_completion_source) {
             oai_settings.chat_completion_source = settingsSnapshot.chat_completion_source;
         }
 
-        // 从快照恢复所有模型字段
         for (const [field, value] of Object.entries(settingsSnapshot.model_fields)) {
             oai_settings[field] = value;
         }
 
-        // 恢复 streaming 设置
         if (settingsSnapshot.streaming !== undefined) {
             oai_settings.streaming = settingsSnapshot.streaming;
         }
 
-        // 获取恢复的模型信息用于日志
         const source = settingsSnapshot.chat_completion_source;
         const field = SOURCE_TO_FIELD[source];
         const restoredModel = field ? oai_settings[field] : '未知';
 
         addLog('已恢复原模型: ' + (restoredModel || '默认模型'), 'success');
 
-        // 保存设置
         if (saveSettingsDebounced) {
             saveSettingsDebounced();
         }
 
-        // 清除快照（恢复完成后快照不再有效）
         const snapshotModel = restoredModel;
         settingsSnapshot = null;
 
