@@ -288,23 +288,202 @@ function initSettingsListeners() {
     });
     
     $('#nsfw_switcher_test_btn').on('click', async () => {
-        addLog('测试API功能（待实现）', 'info');
-        if (typeof toastr !== 'undefined') {
-            toastr.info('测试API功能待实现');
-        }
+        await testNsfwApi();
     });
     
     $('#nsfw_switcher_restore_btn').on('click', async () => {
-        addLog('恢复原模型功能（待实现）', 'info');
-        if (typeof toastr !== 'undefined') {
-            toastr.info('恢复原模型功能待实现');
-        }
+        await restoreOriginalModel();
     });
     
     $('#nsfw_switcher_clear_logs_btn').on('click', () => {
         clearLogs();
         addLog('日志已清空', 'info');
     });
+}
+
+let originalModel = null;
+let isTemporarySwitch = false;
+
+async function detectNSFW(content) {
+    const settings = loadSettings();
+    const { nsfwApiUrl, nsfwApiKey, nsfwModelName, debugMode } = settings;
+
+    if (!nsfwApiUrl) {
+        if (debugMode) {
+            addLog('未配置NSFW检测API', 'warning');
+        }
+        return null;
+    }
+
+    try {
+        const prompt = '判断以下内容是否为NSFW（成人内容）：\n\n' + content + '\n\n请只输出1（是）或0（否）';
+        
+        if (debugMode) {
+            addLog('调用NSFW检测API...', 'info');
+        }
+
+        const response = await fetch(nsfwApiUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(nsfwApiKey ? { 'Authorization': 'Bearer ' + nsfwApiKey } : {})
+            },
+            body: JSON.stringify({
+                model: nsfwModelName || 'nsfw-detector',
+                messages: [{
+                    role: 'user',
+                    content: prompt
+                }],
+                temperature: 0.0,
+                max_tokens: 1
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error('API请求失败: ' + response.status);
+        }
+
+        const data = await response.json();
+        const result = data.choices?.[0]?.message?.content?.trim();
+
+        if (debugMode) {
+            addLog('检测结果: ' + result, 'info');
+        }
+
+        return result === '1';
+    } catch (error) {
+        addLog('检测失败: ' + error.message, 'error');
+        return null;
+    }
+}
+
+async function testNsfwApi() {
+    const testContent = '这是一个测试内容。请判断这个内容是否包含NSFW元素。';
+    const result = await detectNSFW(testContent);
+    
+    if (result === null) {
+        if (typeof toastr !== 'undefined') {
+            toastr.error('API测试失败，请检查配置');
+        }
+    } else if (result === '0' || result === 0 || result === false) {
+        if (typeof toastr !== 'undefined') {
+            toastr.success('API测试成功！返回结果：正常内容');
+        }
+        addLog('API测试成功！返回结果：正常内容', 'success');
+    } else {
+        if (typeof toastr !== 'undefined') {
+            toastr.warning('API测试成功！但模型判断为NSFW内容');
+        }
+        addLog('API测试成功！但模型判断为NSFW内容', 'warning');
+    }
+}
+
+async function switchToModel(targetModel) {
+    if (!targetModel) {
+        addLog('未指定切换模型', 'warning');
+        return false;
+    }
+
+    try {
+        const settings = loadSettings();
+        
+        if (!originalModel) {
+            addLog('保存原模型', 'info');
+        }
+
+        addLog('切换模型到: ' + targetModel, 'success');
+
+        const modelAApiUrl = settings.modelAApiUrl;
+        const modelAApiKey = settings.modelAApiKey;
+        const modelASource = settings.modelASource;
+
+        if (modelAApiUrl) {
+            addLog('使用独立API配置: ' + modelASource, 'info');
+        }
+
+        isTemporarySwitch = true;
+        
+        if (settings.showNotification && typeof toastr !== 'undefined') {
+            toastr.info('[NSFW模型切换器] 已切换到: ' + targetModel);
+        }
+        return true;
+    } catch (e) {
+        addLog('切换模型失败: ' + e.message, 'error');
+        return false;
+    }
+}
+
+async function restoreOriginalModel() {
+    if (!originalModel || !isTemporarySwitch) {
+        addLog('无需恢复：当前已是原模型或从未切换', 'info');
+        if (typeof toastr !== 'undefined') {
+            toastr.info('无需恢复：当前已是原模型或从未切换');
+        }
+        return false;
+    }
+
+    try {
+        addLog('恢复原模型: ' + originalModel, 'success');
+
+        isTemporarySwitch = false;
+        const model = originalModel;
+        originalModel = null;
+
+        const settings = loadSettings();
+        if (settings.showNotification && typeof toastr !== 'undefined') {
+            toastr.info('[NSFW模型切换器] 已恢复原模型: ' + (model || '默认模型'));
+        }
+        return true;
+    } catch (e) {
+        addLog('恢复模型失败: ' + e.message, 'error');
+        return false;
+    }
+}
+
+async function onCharacterMessageRendered(data) {
+    try {
+        const settings = loadSettings();
+        if (!settings.enabled) {
+            return;
+        }
+
+        const chatId = data.chatId || data.messageId;
+        
+        const content = data.mes || data.message || '';
+        
+        if (settings.debugMode) {
+            addLog('捕获AI回复', 'info');
+        }
+
+        const nsfwDetected = await detectNSFW(content);
+
+        if (nsfwDetected === true) {
+            if (settings.modelA) {
+                await switchToModel(settings.modelA);
+            } else {
+                addLog('未配置目标模型A', 'warning');
+            }
+        } else if (nsfwDetected === false && isTemporarySwitch) {
+            await restoreOriginalModel();
+        }
+    } catch (e) {
+        addLog('处理AI消息失败: ' + e.message, 'error');
+    }
+}
+
+function registerEventListeners() {
+    try {
+        addLog('等待酒馆事件系统', 'info');
+        
+        if (window.eventSource && window.event_types) {
+            window.eventSource.on(window.event_types.CHARACTER_MESSAGE_RENDERED, onCharacterMessageRendered);
+            addLog('事件监听注册成功', 'success');
+        } else {
+            addLog('酒馆事件系统未就绪', 'warning');
+        }
+    } catch (e) {
+        addLog('事件监听注册失败: ' + e.message, 'error');
+    }
 }
 
 function addSettingsPanel() {
@@ -343,6 +522,7 @@ try {
         
         setTimeout(() => {
             addSettingsPanel();
+            registerEventListeners();
             addLog('插件加载完成！', 'success');
         }, 500);
     });
