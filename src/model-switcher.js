@@ -5,6 +5,7 @@
 
 import { saveSettingsDebounced } from '../../../../../script.js';
 import { oai_settings } from '../../../../../scripts/openai.js';
+import { power_user } from '../../../../../scripts/power-user.js';
 import { addLog } from './logger.js';
 import { loadSettings } from './settings.js';
 
@@ -49,6 +50,12 @@ function takeSnapshot() {
         const snapshot = {
             chat_completion_source: oai_settings.chat_completion_source,
             model_fields: {},
+            presets: {
+                instruct: power_user?.instruct ? structuredClone(power_user.instruct) : null,
+                context: power_user?.context ? structuredClone(power_user.context) : null,
+                sysprompt: power_user?.sysprompt ? structuredClone(power_user.sysprompt) : null,
+                reasoning: power_user?.reasoning ? structuredClone(power_user.reasoning) : null,
+            },
         };
 
         for (const [source, field] of Object.entries(SOURCE_TO_FIELD)) {
@@ -99,10 +106,39 @@ export function saveSettingsSnapshot() {
         if (info) {
             addLog('已保存原模型: ' + info.model + ' (来源: ' + info.source + ')', 'info');
         }
+        const presets = settingsSnapshot.presets;
+        if (presets?.instruct) {
+            addLog('已保存预设: instruct=' + (presets.instruct.preset || '无') + ', context=' + (presets.context?.preset || '无') + ', sysprompt=' + (presets.sysprompt?.name || '无'), 'info');
+        }
         return true;
     }
 
     return false;
+}
+
+function restorePresets() {
+    if (!settingsSnapshot?.presets) {
+        return;
+    }
+
+    try {
+        const p = settingsSnapshot.presets;
+        if (p.instruct && power_user) {
+            Object.assign(power_user.instruct, p.instruct);
+        }
+        if (p.context && power_user) {
+            Object.assign(power_user.context, p.context);
+        }
+        if (p.sysprompt && power_user) {
+            Object.assign(power_user.sysprompt, p.sysprompt);
+        }
+        if (p.reasoning && power_user) {
+            Object.assign(power_user.reasoning, p.reasoning);
+        }
+        addLog('已应用原模型的预设配置', 'info');
+    } catch (e) {
+        addLog('恢复预设失败: ' + e.message, 'warning');
+    }
 }
 
 export async function switchToModel(targetModel, targetSource, targetApiUrl, targetApiKey) {
@@ -134,6 +170,9 @@ export async function switchToModel(targetModel, targetSource, targetApiUrl, tar
             oai_settings.chat_completion_source = source;
             addLog('切换 API 来源到: ' + source, 'info');
         }
+
+        // 应用原模型的预设，确保目标模型使用相同的 instruct/context/sysprompt
+        restorePresets();
 
         oai_settings[targetField] = targetModel;
 
@@ -192,6 +231,9 @@ export async function restoreOriginalModel() {
         if (settingsSnapshot.streaming !== undefined) {
             oai_settings.streaming = settingsSnapshot.streaming;
         }
+
+        // 恢复原模型的预设
+        restorePresets();
 
         const source = settingsSnapshot.chat_completion_source;
         const field = SOURCE_TO_FIELD[source];
