@@ -6,6 +6,9 @@ const defaultSettings = {
     nsfwApiKey: '',
     nsfwModelName: 'nsfw-detector',
     modelA: '',
+    modelAApiUrl: '',
+    modelAApiKey: '',
+    modelASource: 'openai',
     prompt: '判断以下内容是否为NSFW（成人内容）：\n\n{content}\n\n请只输出1（是）或0（否）。',
     showNotification: true,
     debugMode: false,
@@ -27,6 +30,9 @@ export function loadSettings() {
         $('#nsfw_switcher_api_key').val(currentSettings.nsfwApiKey || '');
         $('#nsfw_switcher_model_name').val(currentSettings.nsfwModelName || 'nsfw-detector');
         $('#nsfw_switcher_model_a').val(currentSettings.modelA || '');
+        $('#nsfw_switcher_model_a_api_url').val(currentSettings.modelAApiUrl || '');
+        $('#nsfw_switcher_model_a_api_key').val(currentSettings.modelAApiKey || '');
+        $('#nsfw_switcher_model_a_source').val(currentSettings.modelASource || 'openai');
         $('#nsfw_switcher_prompt').val(currentSettings.prompt || defaultSettings.prompt);
         $('#nsfw_switcher_show_notification').prop('checked', currentSettings.showNotification !== false);
         $('#nsfw_switcher_debug_mode').prop('checked', currentSettings.debugMode === true);
@@ -51,6 +57,9 @@ export function saveSettings() {
             nsfwApiKey: $('#nsfw_switcher_api_key').val().trim(),
             nsfwModelName: $('#nsfw_switcher_model_name').val().trim() || 'nsfw-detector',
             modelA: $('#nsfw_switcher_model_a').val().trim(),
+            modelAApiUrl: $('#nsfw_switcher_model_a_api_url').val().trim(),
+            modelAApiKey: $('#nsfw_switcher_model_a_api_key').val().trim(),
+            modelASource: $('#nsfw_switcher_model_a_source').val() || 'openai',
             prompt: $('#nsfw_switcher_prompt').val(),
             showNotification: $('#nsfw_switcher_show_notification').prop('checked'),
             debugMode: $('#nsfw_switcher_debug_mode').prop('checked'),
@@ -105,7 +114,7 @@ export function initSettingsListeners() {
         updatePluginStatus();
     });
     
-    $('#nsfw_switcher_api_url, #nsfw_switcher_api_key, #nsfw_switcher_model_name, #nsfw_switcher_model_a').on('input', debounce(saveSettings, 500));
+    $('#nsfw_switcher_api_url, #nsfw_switcher_api_key, #nsfw_switcher_model_name, #nsfw_switcher_model_a, #nsfw_switcher_model_a_api_url, #nsfw_switcher_model_a_api_key, #nsfw_switcher_model_a_source').on('input', debounce(saveSettings, 500));
     $('#nsfw_switcher_prompt').on('input', debounce(saveSettings, 1000));
     $('#nsfw_switcher_max_length').on('change', saveSettings);
     $('#nsfw_switcher_show_notification, #nsfw_switcher_debug_mode').on('change', saveSettings);

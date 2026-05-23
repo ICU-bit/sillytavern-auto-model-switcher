@@ -45,18 +45,45 @@ try {
 
                 console.log('[NSFW模型切换器] 切换模型:', currentModel, '->', targetModel);
 
-                if (currentSource === chat_completion_sources.OPENAI) {
-                    oai_settings.openai_model = targetModel;
-                    $('#model_openai_select').val(targetModel).trigger('change');
-                } else if (currentSource === chat_completion_sources.CLAUDE) {
-                    oai_settings.claude_model = targetModel;
-                    $('#model_claude_select').val(targetModel).trigger('change');
-                } else if (currentSource === chat_completion_sources.OPENROUTER) {
-                    oai_settings.openrouter_model = targetModel;
-                    $('#model_openrouter_select').val(targetModel).trigger('change');
+                const modelAApiUrl = getSetting('modelAApiUrl', '');
+                const modelAApiKey = getSetting('modelAApiKey', '');
+                const modelASource = getSetting('modelASource', 'openai');
+
+                if (modelAApiUrl) {
+                    console.log('[NSFW模型切换器] 使用独立API配置:', modelASource);
+                    
+                    oai_settings.chat_completion_source = chat_completion_sources[modelASource.toUpperCase()] || chat_completion_sources.OPENAI;
+                    
+                    if (modelASource === 'openai') {
+                        oai_settings.openai_api_base_url = modelAApiUrl;
+                        oai_settings.openai_api_key = modelAApiKey;
+                        oai_settings.openai_model = targetModel;
+                        $('#model_openai_select').val(targetModel).trigger('change');
+                    } else if (modelASource === 'claude') {
+                        oai_settings.claude_api_base_url = modelAApiUrl;
+                        oai_settings.claude_api_key = modelAApiKey;
+                        oai_settings.claude_model = targetModel;
+                        $('#model_claude_select').val(targetModel).trigger('change');
+                    } else if (modelASource === 'openrouter') {
+                        oai_settings.openrouter_api_base_url = modelAApiUrl;
+                        oai_settings.openrouter_api_key = modelAApiKey;
+                        oai_settings.openrouter_model = targetModel;
+                        $('#model_openrouter_select').val(targetModel).trigger('change');
+                    }
                 } else {
-                    console.log('[NSFW模型切换器] 不支持的API来源:', currentSource);
-                    return false;
+                    if (currentSource === chat_completion_sources.OPENAI) {
+                        oai_settings.openai_model = targetModel;
+                        $('#model_openai_select').val(targetModel).trigger('change');
+                    } else if (currentSource === chat_completion_sources.CLAUDE) {
+                        oai_settings.claude_model = targetModel;
+                        $('#model_claude_select').val(targetModel).trigger('change');
+                    } else if (currentSource === chat_completion_sources.OPENROUTER) {
+                        oai_settings.openrouter_model = targetModel;
+                        $('#model_openrouter_select').val(targetModel).trigger('change');
+                    } else {
+                        console.log('[NSFW模型切换器] 不支持的API来源:', currentSource);
+                        return false;
+                    }
                 }
 
                 isTemporarySwitch = true;
@@ -94,19 +121,33 @@ try {
                 console.log('[NSFW模型切换器] 恢复原模型:', currentModel, '->', originalModel);
 
                 const currentSource = oai_settings.chat_completion_source;
+                const modelAApiUrl = getSetting('modelAApiUrl', '');
 
-                if (currentSource === chat_completion_sources.OPENAI) {
-                    oai_settings.openai_model = originalModel;
-                    $('#model_openai_select').val(originalModel).trigger('change');
-                } else if (currentSource === chat_completion_sources.CLAUDE) {
-                    oai_settings.claude_model = originalModel;
-                    $('#model_claude_select').val(originalModel).trigger('change');
-                } else if (currentSource === chat_completion_sources.OPENROUTER) {
-                    oai_settings.openrouter_model = originalModel;
-                    $('#model_openrouter_select').val(originalModel).trigger('change');
+                if (modelAApiUrl) {
+                    if (currentSource === chat_completion_sources.OPENAI) {
+                        oai_settings.openai_model = originalModel;
+                        $('#model_openai_select').val(originalModel).trigger('change');
+                    } else if (currentSource === chat_completion_sources.CLAUDE) {
+                        oai_settings.claude_model = originalModel;
+                        $('#model_claude_select').val(originalModel).trigger('change');
+                    } else if (currentSource === chat_completion_sources.OPENROUTER) {
+                        oai_settings.openrouter_model = originalModel;
+                        $('#model_openrouter_select').val(originalModel).trigger('change');
+                    }
                 } else {
-                    console.log('[NSFW模型切换器] 不支持的API来源:', currentSource);
-                    return false;
+                    if (currentSource === chat_completion_sources.OPENAI) {
+                        oai_settings.openai_model = originalModel;
+                        $('#model_openai_select').val(originalModel).trigger('change');
+                    } else if (currentSource === chat_completion_sources.CLAUDE) {
+                        oai_settings.claude_model = originalModel;
+                        $('#model_claude_select').val(originalModel).trigger('change');
+                    } else if (currentSource === chat_completion_sources.OPENROUTER) {
+                        oai_settings.openrouter_model = originalModel;
+                        $('#model_openrouter_select').val(originalModel).trigger('change');
+                    } else {
+                        console.log('[NSFW模型切换器] 不支持的API来源:', currentSource);
+                        return false;
+                    }
                 }
 
                 isTemporarySwitch = false;
@@ -324,6 +365,36 @@ try {
                                 <input type="text" id="nsfw_switcher_model_a" 
                                        style="width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; box-sizing: border-box;"
                                        placeholder="gpt-4">
+                            </div>
+
+                            <div style="margin-bottom: 12px;">
+                                <label style="display: block; font-weight: 500; color: #555; margin-bottom: 5px; font-size: 13px;">
+                                    模型A API地址
+                                </label>
+                                <input type="text" id="nsfw_switcher_model_a_api_url" 
+                                       style="width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; box-sizing: border-box;"
+                                       placeholder="https://api.example.com/v1/chat/completions">
+                            </div>
+
+                            <div style="margin-bottom: 12px;">
+                                <label style="display: block; font-weight: 500; color: #555; margin-bottom: 5px; font-size: 13px;">
+                                    模型A API密钥
+                                </label>
+                                <input type="password" id="nsfw_switcher_model_a_api_key" 
+                                       style="width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; box-sizing: border-box;"
+                                       placeholder="sk-... (可选)">
+                            </div>
+
+                            <div style="margin-bottom: 12px;">
+                                <label style="display: block; font-weight: 500; color: #555; margin-bottom: 5px; font-size: 13px;">
+                                    API来源
+                                </label>
+                                <select id="nsfw_switcher_model_a_source" 
+                                        style="width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; box-sizing: border-box;">
+                                    <option value="openai">OpenAI</option>
+                                    <option value="claude">Claude</option>
+                                    <option value="openrouter">OpenRouter</option>
+                                </select>
                             </div>
                         </div>
 
