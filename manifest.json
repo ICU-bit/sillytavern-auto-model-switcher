@@ -1,0 +1,10 @@
+{
+    "display_name": "NSFW模型切换器",
+    "loading_order": 100,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "author": "ICU-bit",
+    "version": "0.0.1",
+    "homePage": "https://github.com/ICU-bit/sillytavern-auto-model-switcher"
+}
