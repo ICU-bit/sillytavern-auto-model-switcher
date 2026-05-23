@@ -17,6 +17,8 @@ try {
         let lastAiMessage = null;
         let eventSource = null;
         let event_types = null;
+        let retryCount = 0;
+        const MAX_RETRIES = 10;
 
         async function switchToModel(targetModel) {
             if (!targetModel) {
@@ -25,76 +27,77 @@ try {
             }
 
             try {
-                const { oai_settings, chat_completion_sources, getChatCompletionModel } = await import('../../openai.js');
-                
-                const currentSource = oai_settings.chat_completion_source;
-                const currentModel = getChatCompletionModel();
+                if (window.oai_settings && window.getChatCompletionModel) {
+                    const currentSource = window.oai_settings.chat_completion_source;
+                    const currentModel = window.getChatCompletionModel();
 
-                if (!originalModel) {
-                    originalModel = currentModel;
-                    addLog('保存原模型: ' + originalModel, 'info');
-                    updateStatusDisplay(currentModel, originalModel, false);
-                }
-
-                if (currentModel === targetModel) {
-                    addLog('已是目标模型，无需切换', 'info');
-                    isTemporarySwitch = true;
-                    updateStatusDisplay(currentModel, originalModel, true);
-                    return true;
-                }
-
-                addLog('切换模型: ' + currentModel + ' -> ' + targetModel, 'success');
-
-                const modelAApiUrl = getSetting('modelAApiUrl', '');
-                const modelAApiKey = getSetting('modelAApiKey', '');
-                const modelASource = getSetting('modelASource', 'openai');
-
-                if (modelAApiUrl) {
-                    addLog('使用独立API配置: ' + modelASource, 'info');
-                    
-                    oai_settings.chat_completion_source = chat_completion_sources[modelASource.toUpperCase()] || chat_completion_sources.OPENAI;
-                    
-                    if (modelASource === 'openai') {
-                        oai_settings.openai_api_base_url = modelAApiUrl;
-                        oai_settings.openai_api_key = modelAApiKey;
-                        oai_settings.openai_model = targetModel;
-                        $('#model_openai_select').val(targetModel).trigger('change');
-                    } else if (modelASource === 'claude') {
-                        oai_settings.claude_api_base_url = modelAApiUrl;
-                        oai_settings.claude_api_key = modelAApiKey;
-                        oai_settings.claude_model = targetModel;
-                        $('#model_claude_select').val(targetModel).trigger('change');
-                    } else if (modelASource === 'openrouter') {
-                        oai_settings.openrouter_api_base_url = modelAApiUrl;
-                        oai_settings.openrouter_api_key = modelAApiKey;
-                        oai_settings.openrouter_model = targetModel;
-                        $('#model_openrouter_select').val(targetModel).trigger('change');
+                    if (!originalModel) {
+                        originalModel = currentModel;
+                        addLog('保存原模型: ' + originalModel, 'info');
+                        updateStatusDisplay(currentModel, originalModel, false);
                     }
-                } else {
-                    if (currentSource === chat_completion_sources.OPENAI) {
-                        oai_settings.openai_model = targetModel;
-                        $('#model_openai_select').val(targetModel).trigger('change');
-                    } else if (currentSource === chat_completion_sources.CLAUDE) {
-                        oai_settings.claude_model = targetModel;
-                        $('#model_claude_select').val(targetModel).trigger('change');
-                    } else if (currentSource === chat_completion_sources.OPENROUTER) {
-                        oai_settings.openrouter_model = targetModel;
-                        $('#model_openrouter_select').val(targetModel).trigger('change');
+
+                    if (currentModel === targetModel) {
+                        addLog('已是目标模型，无需切换', 'info');
+                        isTemporarySwitch = true;
+                        updateStatusDisplay(currentModel, originalModel, true);
+                        return true;
+                    }
+
+                    addLog('切换模型: ' + currentModel + ' -> ' + targetModel, 'success');
+
+                    const modelAApiUrl = getSetting('modelAApiUrl', '');
+                    const modelAApiKey = getSetting('modelAApiKey', '');
+                    const modelASource = getSetting('modelASource', 'openai');
+
+                    if (modelAApiUrl) {
+                        addLog('使用独立API配置: ' + modelASource, 'info');
+                        
+                        if (modelASource === 'openai') {
+                            window.oai_settings.openai_api_base_url = modelAApiUrl;
+                            window.oai_settings.openai_api_key = modelAApiKey;
+                            window.oai_settings.openai_model = targetModel;
+                            $('#model_openai_select').val(targetModel).trigger('change');
+                        } else if (modelASource === 'claude') {
+                            window.oai_settings.claude_api_base_url = modelAApiUrl;
+                            window.oai_settings.claude_api_key = modelAApiKey;
+                            window.oai_settings.claude_model = targetModel;
+                            $('#model_claude_select').val(targetModel).trigger('change');
+                        } else if (modelASource === 'openrouter') {
+                            window.oai_settings.openrouter_api_base_url = modelAApiUrl;
+                            window.oai_settings.openrouter_api_key = modelAApiKey;
+                            window.oai_settings.openrouter_model = targetModel;
+                            $('#model_openrouter_select').val(targetModel).trigger('change');
+                        }
                     } else {
-                        addLog('不支持的API来源: ' + currentSource, 'error');
-                        return false;
+                        if (currentSource === window.chat_completion_sources.OPENAI) {
+                            window.oai_settings.openai_model = targetModel;
+                            $('#model_openai_select').val(targetModel).trigger('change');
+                        } else if (currentSource === window.chat_completion_sources.CLAUDE) {
+                            window.oai_settings.claude_model = targetModel;
+                            $('#model_claude_select').val(targetModel).trigger('change');
+                        } else if (currentSource === window.chat_completion_sources.OPENROUTER) {
+                            window.oai_settings.openrouter_model = targetModel;
+                            $('#model_openrouter_select').val(targetModel).trigger('change');
+                        } else {
+                            addLog('不支持的API来源: ' + currentSource, 'error');
+                            return false;
+                        }
                     }
-                }
 
-                isTemporarySwitch = true;
-                setSetting('lastSwitchTime', Date.now());
-                setSetting('originalModel', originalModel);
-                updateStatusDisplay(targetModel, originalModel, true);
+                    isTemporarySwitch = true;
+                    setSetting('lastSwitchTime', Date.now());
+                    setSetting('originalModel', originalModel);
+                    updateStatusDisplay(targetModel, originalModel, true);
 
-                if (getSetting('showNotification', true) && typeof toastr !== 'undefined') {
-                    toastr.info(`[NSFW模型切换器] 已切换到: ${targetModel}`);
+                    if (getSetting('showNotification', true) && typeof toastr !== 'undefined') {
+                        toastr.info(`[NSFW模型切换器] 已切换到: ${targetModel}`);
+                    }
+                    return true;
+                } else {
+                    addLog('酒馆模型系统未就绪', 'warning');
+                    return false;
                 }
-                return true;
             } catch (e) {
                 addLog('切换模型失败: ' + e.message, 'error');
                 return false;
@@ -107,60 +110,49 @@ try {
             }
 
             try {
-                const { oai_settings, chat_completion_sources, getChatCompletionModel } = await import('../../openai.js');
-                
-                const currentModel = getChatCompletionModel();
+                if (window.oai_settings && window.getChatCompletionModel) {
+                    const currentModel = window.getChatCompletionModel();
 
-                if (currentModel === originalModel) {
-                    addLog('已是原模型，无需恢复', 'info');
-                    isTemporarySwitch = false;
-                    updateStatusDisplay(originalModel, originalModel, false);
-                    return true;
-                }
-
-                addLog('恢复原模型: ' + currentModel + ' -> ' + originalModel, 'success');
-
-                const currentSource = oai_settings.chat_completion_source;
-                const modelAApiUrl = getSetting('modelAApiUrl', '');
-
-                if (modelAApiUrl) {
-                    if (currentSource === chat_completion_sources.OPENAI) {
-                        oai_settings.openai_model = originalModel;
-                        $('#model_openai_select').val(originalModel).trigger('change');
-                    } else if (currentSource === chat_completion_sources.CLAUDE) {
-                        oai_settings.claude_model = originalModel;
-                        $('#model_claude_select').val(originalModel).trigger('change');
-                    } else if (currentSource === chat_completion_sources.OPENROUTER) {
-                        oai_settings.openrouter_model = originalModel;
-                        $('#model_openrouter_select').val(originalModel).trigger('change');
+                    if (currentModel === originalModel) {
+                        addLog('已是原模型，无需恢复', 'info');
+                        isTemporarySwitch = false;
+                        updateStatusDisplay(originalModel, originalModel, false);
+                        return true;
                     }
-                } else {
-                    if (currentSource === chat_completion_sources.OPENAI) {
-                        oai_settings.openai_model = originalModel;
+
+                    addLog('恢复原模型: ' + currentModel + ' -> ' + originalModel, 'success');
+
+                    const currentSource = window.oai_settings.chat_completion_source;
+
+                    if (currentSource === window.chat_completion_sources.OPENAI) {
+                        window.oai_settings.openai_model = originalModel;
                         $('#model_openai_select').val(originalModel).trigger('change');
-                    } else if (currentSource === chat_completion_sources.CLAUDE) {
-                        oai_settings.claude_model = originalModel;
+                    } else if (currentSource === window.chat_completion_sources.CLAUDE) {
+                        window.oai_settings.claude_model = originalModel;
                         $('#model_claude_select').val(originalModel).trigger('change');
-                    } else if (currentSource === chat_completion_sources.OPENROUTER) {
-                        oai_settings.openrouter_model = originalModel;
+                    } else if (currentSource === window.chat_completion_sources.OPENROUTER) {
+                        window.oai_settings.openrouter_model = originalModel;
                         $('#model_openrouter_select').val(originalModel).trigger('change');
                     } else {
                         addLog('不支持的API来源: ' + currentSource, 'error');
                         return false;
                     }
-                }
 
-                isTemporarySwitch = false;
-                const restoredModel = originalModel;
-                originalModel = null;
-                setSetting('lastSwitchTime', null);
-                setSetting('originalModel', null);
-                updateStatusDisplay(restoredModel, null, false);
+                    isTemporarySwitch = false;
+                    const restoredModel = originalModel;
+                    originalModel = null;
+                    setSetting('lastSwitchTime', null);
+                    setSetting('originalModel', null);
+                    updateStatusDisplay(restoredModel, null, false);
 
-                if (getSetting('showNotification', true) && typeof toastr !== 'undefined') {
-                    toastr.info(`[NSFW模型切换器] 已恢复原模型: ${restoredModel || '默认模型'}`);
+                    if (getSetting('showNotification', true) && typeof toastr !== 'undefined') {
+                        toastr.info(`[NSFW模型切换器] 已恢复原模型: ${restoredModel || '默认模型'}`);
+                    }
+                    return true;
+                } else {
+                    addLog('酒馆模型系统未就绪', 'warning');
+                    return false;
                 }
-                return true;
             } catch (e) {
                 addLog('恢复模型失败: ' + e.message, 'error');
                 return false;
@@ -223,8 +215,11 @@ try {
 
         async function onAiMessageRendered(chatId) {
             try {
-                const { getContext } = await import('../../extensions.js');
-                const context = getContext();
+                if (!window.getContext) {
+                    return;
+                }
+                
+                const context = window.getContext();
                 const chat = context.chat[chatId];
 
                 if (!chat || chat.is_user) {
@@ -261,8 +256,11 @@ try {
 
         async function onUserMessageSent(mesId) {
             try {
-                const { getContext } = await import('../../extensions.js');
-                const context = getContext();
+                if (!window.getContext) {
+                    return;
+                }
+                
+                const context = window.getContext();
                 const chat = context.chat[mesId];
 
                 if (!chat || !chat.is_user) {
@@ -485,24 +483,24 @@ try {
             });
         }
 
-        async function registerEventListeners() {
+        function registerEventListeners() {
             addLog('尝试注册事件监听...', 'info');
             
-            try {
-                const module = await import('../../extensions.js');
-                eventSource = module.eventSource;
-                event_types = module.event_types;
+            if (window.eventSource && window.event_types) {
+                eventSource = window.eventSource;
+                event_types = window.event_types;
                 
                 eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, onAiMessageRendered);
                 eventSource.on(event_types.MESSAGE_SENT, onUserMessageSent);
                 eventSource.on(event_types.CHAT_CHANGED, onChatChanged);
                 addLog('事件监听注册成功', 'success');
-            } catch (e) {
-                addLog('注册事件失败: ' + e.message + '，将使用定时器轮询方式', 'warning');
-                
-                setTimeout(() => {
-                    registerEventListeners();
-                }, 3000);
+                retryCount = 0;
+            } else if (retryCount < MAX_RETRIES) {
+                retryCount++;
+                setTimeout(registerEventListeners, 1000);
+            } else {
+                addLog('事件监听注册失败: 酒馆扩展系统未就绪', 'warning');
+                retryCount = 0;
             }
         }
 
