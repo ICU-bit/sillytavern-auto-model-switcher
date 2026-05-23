@@ -468,7 +468,7 @@ function createSettingsHtml() {
         }
     </style>
     
-    <div class="nsfw_switcher_container" style="max-width: 600px;">
+    <div class="nsfw_switcher_container" style="max-width: 600px; margin: 10px;">
         <div class="inline-drawer">
             <div class="inline-drawer-toggle inline-drawer-header" style="padding: 12px;">
                 <div style="display: flex; align-items: center; gap: 10px;">
@@ -481,7 +481,6 @@ function createSettingsHtml() {
             <div class="inline-drawer-content" style="display: none;">
                 <div style="padding: 15px;">
                     
-                    <!-- 插件信息卡片 -->
                     <div class="nsfw-switcher-info-box">
                         <div style="font-weight: 600; margin-bottom: 6px;">
                             <i class="fa-solid fa-info-circle"></i> 功能说明
@@ -491,7 +490,6 @@ function createSettingsHtml() {
                         </div>
                     </div>
 
-                    <!-- 主开关 -->
                     <div class="nsfw-switcher-card" style="background: white;">
                         <div class="nsfw-switcher-checkbox">
                             <input type="checkbox" id="nsfw_switcher_enabled" checked>
@@ -502,7 +500,6 @@ function createSettingsHtml() {
                         </div>
                     </div>
 
-                    <!-- 状态显示 -->
                     <div class="nsfw-switcher-status">
                         <div id="nsfw_switcher_status_indicator" class="nsfw-switcher-status-indicator status-warning"></div>
                         <div class="nsfw-switcher-status-text">
@@ -512,7 +509,6 @@ function createSettingsHtml() {
 
                     <div class="nsfw-switcher-divider"></div>
 
-                    <!-- API配置卡片 -->
                     <div class="nsfw-switcher-card">
                         <div class="nsfw-switcher-card-title">
                             <i class="fa-solid fa-server"></i>
@@ -553,7 +549,6 @@ function createSettingsHtml() {
                         </div>
                     </div>
 
-                    <!-- 模型配置卡片 -->
                     <div class="nsfw-switcher-card">
                         <div class="nsfw-switcher-card-title">
                             <i class="fa-solid fa-robot"></i>
@@ -587,7 +582,6 @@ function createSettingsHtml() {
                         </div>
                     </div>
 
-                    <!-- 高级设置 -->
                     <div class="inline-drawer wide100p">
                         <div class="inline-drawer-toggle inline-drawer-header" style="padding: 12px; background: #f0f0f0; border-radius: 8px; cursor: pointer;">
                             <div style="display: flex; align-items: center; gap: 8px;">
@@ -633,7 +627,6 @@ function createSettingsHtml() {
 
                     <div class="nsfw-switcher-divider"></div>
 
-                    <!-- 操作按钮 -->
                     <div class="nsfw-switcher-btn-group">
                         <button id="nsfw_switcher_test_btn" class="nsfw-switcher-btn nsfw-switcher-btn-primary">
                             <i class="fa-solid fa-flask"></i>
@@ -659,7 +652,7 @@ function createSettingsHtml() {
                                 GitHub 项目地址
                             </a>
                         </div>
-                        <div>NSFW模型切换器 v0.0.2</div>
+                        <div>NSFW模型切换器 v0.0.3</div>
                     </div>
                 </div>
             </div>
@@ -668,10 +661,53 @@ function createSettingsHtml() {
     `;
 }
 
+function findTargetContainer() {
+    const selectors = [
+        '#extensions-settings-button',
+        '#extensionsMenu',
+        '#extension_settings',
+        '.extensions-content',
+        '.options-content'
+    ];
+    
+    for (const selector of selectors) {
+        const element = document.querySelector(selector);
+        if (element) {
+            console.log('[NSFW模型切换器] 找到目标容器:', selector);
+            return element;
+        }
+    }
+    
+    console.warn('[NSFW模型切换器] 未找到预定义容器，将添加到 body');
+    return document.body;
+}
+
+function addSettingsUI() {
+    const settingsHtml = createSettingsHtml();
+    const container = document.createElement('div');
+    container.innerHTML = settingsHtml;
+    const settingsElement = container.firstElementChild;
+    
+    const targetElement = findTargetContainer();
+    
+    if (targetElement === document.body) {
+        document.body.appendChild(settingsElement);
+    } else {
+        $(targetElement).after(settingsElement);
+    }
+    
+    loadSettings();
+    initSettingsListeners();
+    console.log('[NSFW模型切换器] 设置界面已添加');
+}
+
 async function initPlugin() {
+    console.log('[NSFW模型切换器] 开始初始化...');
+    
     const savedOriginalModel = getSetting('originalModel', null);
     if (savedOriginalModel) {
         originalModel = savedOriginalModel;
+        console.log('[NSFW模型切换器] 已恢复原模型:', originalModel);
     }
     
     try {
@@ -679,47 +715,38 @@ async function initPlugin() {
         eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, onAiMessageRendered);
         eventSource.on(event_types.MESSAGE_SENT, onUserMessageSent);
         eventSource.on(event_types.CHAT_CHANGED, onChatChanged);
-
         console.log('[NSFW模型切换器] 事件监听已注册');
     } catch (e) {
         console.error('[NSFW模型切换器] 注册事件失败:', e);
     }
 
-    const settingsHtml = createSettingsHtml();
-    const container = document.createElement('div');
-    container.innerHTML = settingsHtml;
-    const settingsElement = container.firstElementChild;
-
-    const targetElement = document.querySelector('#extensions-settings-button');
-    if (targetElement) {
-        $(targetElement).after(settingsElement);
-        loadSettings();
-        initSettingsListeners();
-        console.log('[NSFW模型切换器] 设置界面已添加');
+    if (typeof $ !== 'undefined' && $.ready) {
+        addSettingsUI();
     } else {
-        console.warn('[NSFW模型切换器] 未找到目标容器，稍后重试');
-        setTimeout(() => {
-            const retryTarget = document.querySelector('#extensions-settings-button');
-            if (retryTarget) {
-                $(retryTarget).after(settingsElement);
-                loadSettings();
-                initSettingsListeners();
-                console.log('[NSFW模型切换器] 设置界面已添加（延迟加载）');
-            } else {
-                console.error('[NSFW模型切换器] 无法找到扩展设置容器');
-            }
-        }, 2000);
+        $(document).ready(() => {
+            setTimeout(addSettingsUI, 100);
+        });
     }
 
-    console.log('[NSFW模型切换器] 插件加载完成');
+    console.log('[NSFW模型切换器] 插件初始化完成');
 }
 
 if (typeof jQuery !== 'undefined') {
     jQuery(() => {
-        initPlugin();
+        initPlugin().catch(error => {
+            console.error('[NSFW模型切换器] 初始化失败:', error);
+        });
+    });
+} else if (typeof $ !== 'undefined') {
+    $(() => {
+        initPlugin().catch(error => {
+            console.error('[NSFW模型切换器] 初始化失败:', error);
+        });
     });
 } else {
     document.addEventListener('DOMContentLoaded', () => {
-        initPlugin();
+        initPlugin().catch(error => {
+            console.error('[NSFW模型切换器] 初始化失败:', error);
+        });
     });
 }
