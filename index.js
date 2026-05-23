@@ -1,35 +1,30 @@
-import {
-    eventSource,
-    event_types,
-    getContext
-} from '../../extensions.js';
-
-import {
-    oai_settings,
-    chat_completion_sources,
-    getChatCompletionModel
-} from '../../openai.js';
-
 console.log('[NSFW模型切换器] 插件加载中...');
 
+const extensionName = 'nsfw-model-switcher';
 let originalModel = null;
 let isTemporarySwitch = false;
 let lastAiMessage = null;
 
-const extensionName = 'nsfw-model-switcher';
-
 function getSetting(name, defaultValue = null) {
-    const settings = JSON.parse(localStorage.getItem('extension_settings') || '{}');
-    return settings[extensionName]?.[name] ?? defaultValue;
+    try {
+        const settings = JSON.parse(localStorage.getItem('extension_settings') || '{}');
+        return settings[extensionName]?.[name] ?? defaultValue;
+    } catch (e) {
+        return defaultValue;
+    }
 }
 
 function setSetting(name, value) {
-    const settings = JSON.parse(localStorage.getItem('extension_settings') || '{}');
-    if (!settings[extensionName]) {
-        settings[extensionName] = {};
+    try {
+        const settings = JSON.parse(localStorage.getItem('extension_settings') || '{}');
+        if (!settings[extensionName]) {
+            settings[extensionName] = {};
+        }
+        settings[extensionName][name] = value;
+        localStorage.setItem('extension_settings', JSON.stringify(settings));
+    } catch (e) {
+        console.error('[NSFW模型切换器] 设置保存失败:', e);
     }
-    settings[extensionName][name] = value;
-    localStorage.setItem('extension_settings', JSON.stringify(settings));
 }
 
 async function switchToModel(targetModel) {
@@ -38,42 +33,51 @@ async function switchToModel(targetModel) {
         return false;
     }
 
-    const currentSource = oai_settings.chat_completion_source;
-    const currentModel = getChatCompletionModel();
+    try {
+        const { oai_settings, chat_completion_sources, getChatCompletionModel } = await import('../../openai.js');
+        
+        const currentSource = oai_settings.chat_completion_source;
+        const currentModel = getChatCompletionModel();
 
-    if (!originalModel) {
-        originalModel = currentModel;
-        console.log('[NSFW模型切换器] 保存原模型:', originalModel);
-    }
+        if (!originalModel) {
+            originalModel = currentModel;
+            console.log('[NSFW模型切换器] 保存原模型:', originalModel);
+        }
 
-    if (currentModel === targetModel) {
-        console.log('[NSFW模型切换器] 已是目标模型，无需切换');
+        if (currentModel === targetModel) {
+            console.log('[NSFW模型切换器] 已是目标模型，无需切换');
+            isTemporarySwitch = true;
+            return true;
+        }
+
+        console.log('[NSFW模型切换器] 切换模型:', currentModel, '->', targetModel);
+
+        if (currentSource === chat_completion_sources.OPENAI) {
+            oai_settings.openai_model = targetModel;
+            $('#model_openai_select').val(targetModel).trigger('change');
+        } else if (currentSource === chat_completion_sources.CLAUDE) {
+            oai_settings.claude_model = targetModel;
+            $('#model_claude_select').val(targetModel).trigger('change');
+        } else if (currentSource === chat_completion_sources.OPENROUTER) {
+            oai_settings.openrouter_model = targetModel;
+            $('#model_openrouter_select').val(targetModel).trigger('change');
+        } else {
+            console.log('[NSFW模型切换器] 不支持的API来源:', currentSource);
+            return false;
+        }
+
         isTemporarySwitch = true;
+        setSetting('lastSwitchTime', Date.now());
+        setSetting('originalModel', originalModel);
+
+        if (typeof toastr !== 'undefined') {
+            toastr.info(`[NSFW模型切换器] 已切换到: ${targetModel}`);
+        }
         return true;
-    }
-
-    console.log('[NSFW模型切换器] 切换模型:', currentModel, '->', targetModel);
-
-    if (currentSource === chat_completion_sources.OPENAI) {
-        oai_settings.openai_model = targetModel;
-        $('#model_openai_select').val(targetModel).trigger('change');
-    } else if (currentSource === chat_completion_sources.CLAUDE) {
-        oai_settings.claude_model = targetModel;
-        $('#model_claude_select').val(targetModel).trigger('change');
-    } else if (currentSource === chat_completion_sources.OPENROUTER) {
-        oai_settings.openrouter_model = targetModel;
-        $('#model_openrouter_select').val(targetModel).trigger('change');
-    } else {
-        console.log('[NSFW模型切换器] 不支持的API来源:', currentSource);
+    } catch (e) {
+        console.error('[NSFW模型切换器] 切换模型失败:', e);
         return false;
     }
-
-    isTemporarySwitch = true;
-    setSetting('lastSwitchTime', Date.now());
-    setSetting('originalModel', originalModel);
-
-    toastr.info(`[NSFW模型切换器] 已切换到: ${targetModel}`);
-    return true;
 }
 
 async function restoreOriginalModel() {
@@ -81,39 +85,49 @@ async function restoreOriginalModel() {
         return false;
     }
 
-    const currentModel = getChatCompletionModel();
+    try {
+        const { oai_settings, chat_completion_sources, getChatCompletionModel } = await import('../../openai.js');
+        
+        const currentModel = getChatCompletionModel();
 
-    if (currentModel === originalModel) {
-        console.log('[NSFW模型切换器] 已是原模型，无需恢复');
+        if (currentModel === originalModel) {
+            console.log('[NSFW模型切换器] 已是原模型，无需恢复');
+            isTemporarySwitch = false;
+            return true;
+        }
+
+        console.log('[NSFW模型切换器] 恢复原模型:', currentModel, '->', originalModel);
+
+        const currentSource = oai_settings.chat_completion_source;
+
+        if (currentSource === chat_completion_sources.OPENAI) {
+            oai_settings.openai_model = originalModel;
+            $('#model_openai_select').val(originalModel).trigger('change');
+        } else if (currentSource === chat_completion_sources.CLAUDE) {
+            oai_settings.claude_model = originalModel;
+            $('#model_claude_select').val(originalModel).trigger('change');
+        } else if (currentSource === chat_completion_sources.OPENROUTER) {
+            oai_settings.openrouter_model = originalModel;
+            $('#model_openrouter_select').val(originalModel).trigger('change');
+        } else {
+            console.log('[NSFW模型切换器] 不支持的API来源:', currentSource);
+            return false;
+        }
+
         isTemporarySwitch = false;
+        const restoredModel = originalModel;
+        originalModel = null;
+        setSetting('lastSwitchTime', null);
+        setSetting('originalModel', null);
+
+        if (typeof toastr !== 'undefined') {
+            toastr.info(`[NSFW模型切换器] 已恢复原模型: ${restoredModel || '默认模型'}`);
+        }
         return true;
-    }
-
-    console.log('[NSFW模型切换器] 恢复原模型:', currentModel, '->', originalModel);
-
-    const currentSource = oai_settings.chat_completion_source;
-
-    if (currentSource === chat_completion_sources.OPENAI) {
-        oai_settings.openai_model = originalModel;
-        $('#model_openai_select').val(originalModel).trigger('change');
-    } else if (currentSource === chat_completion_sources.CLAUDE) {
-        oai_settings.claude_model = originalModel;
-        $('#model_claude_select').val(originalModel).trigger('change');
-    } else if (currentSource === chat_completion_sources.OPENROUTER) {
-        oai_settings.openrouter_model = originalModel;
-        $('#model_openrouter_select').val(originalModel).trigger('change');
-    } else {
-        console.log('[NSFW模型切换器] 不支持的API来源:', currentSource);
+    } catch (e) {
+        console.error('[NSFW模型切换器] 恢复模型失败:', e);
         return false;
     }
-
-    isTemporarySwitch = false;
-    originalModel = null;
-    setSetting('lastSwitchTime', null);
-    setSetting('originalModel', null);
-
-    toastr.info(`[NSFW模型切换器] 已恢复原模型: ${originalModel || '默认模型'}`);
-    return true;
 }
 
 async function detectNSFW(content) {
@@ -161,52 +175,62 @@ async function detectNSFW(content) {
 }
 
 async function onAiMessageRendered(chatId) {
-    const context = getContext();
-    const chat = context.chat[chatId];
+    try {
+        const { getContext } = await import('../../extensions.js');
+        const context = getContext();
+        const chat = context.chat[chatId];
 
-    if (!chat || chat.is_user) {
-        return;
-    }
-
-    lastAiMessage = chat.mes;
-    console.log('[NSFW模型切换器] 捕获AI回复:', chatId, chat.mes.substring(0, 50));
-
-    const enabled = getSetting('enabled', true);
-    if (!enabled) {
-        console.log('[NSFW模型切换器] 插件已禁用');
-        return;
-    }
-
-    const nsfwDetected = await detectNSFW(chat.mes);
-
-    if (nsfwDetected === true) {
-        const modelA = getSetting('modelA');
-        if (modelA) {
-            await switchToModel(modelA);
-        } else {
-            console.log('[NSFW模型切换器] 未配置模型A');
+        if (!chat || chat.is_user) {
+            return;
         }
-    } else if (nsfwDetected === false && isTemporarySwitch) {
-        await restoreOriginalModel();
+
+        lastAiMessage = chat.mes;
+        console.log('[NSFW模型切换器] 捕获AI回复:', chatId, chat.mes.substring(0, 50));
+
+        const enabled = getSetting('enabled', true);
+        if (!enabled) {
+            console.log('[NSFW模型切换器] 插件已禁用');
+            return;
+        }
+
+        const nsfwDetected = await detectNSFW(chat.mes);
+
+        if (nsfwDetected === true) {
+            const modelA = getSetting('modelA');
+            if (modelA) {
+                await switchToModel(modelA);
+            } else {
+                console.log('[NSFW模型切换器] 未配置模型A');
+            }
+        } else if (nsfwDetected === false && isTemporarySwitch) {
+            await restoreOriginalModel();
+        }
+    } catch (e) {
+        console.error('[NSFW模型切换器] 处理AI消息失败:', e);
     }
 }
 
 async function onUserMessageSent(mesId) {
-    const context = getContext();
-    const chat = context.chat[mesId];
+    try {
+        const { getContext } = await import('../../extensions.js');
+        const context = getContext();
+        const chat = context.chat[mesId];
 
-    if (!chat || !chat.is_user) {
-        return;
-    }
-
-    console.log('[NSFW模型切换器] 用户发送消息:', mesId);
-
-    if (isTemporarySwitch && lastAiMessage) {
-        const nsfwDetected = await detectNSFW(lastAiMessage);
-
-        if (nsfwDetected === false) {
-            await restoreOriginalModel();
+        if (!chat || !chat.is_user) {
+            return;
         }
+
+        console.log('[NSFW模型切换器] 用户发送消息:', mesId);
+
+        if (isTemporarySwitch && lastAiMessage) {
+            const nsfwDetected = await detectNSFW(lastAiMessage);
+
+            if (nsfwDetected === false) {
+                await restoreOriginalModel();
+            }
+        }
+    } catch (e) {
+        console.error('[NSFW模型切换器] 处理用户消息失败:', e);
     }
 }
 
@@ -226,23 +250,43 @@ function initSettings() {
         modelA: ''
     };
 
-    const currentSettings = JSON.parse(localStorage.getItem('extension_settings') || '{}');
-    if (!currentSettings[extensionName]) {
-        currentSettings[extensionName] = defaultSettings;
-        localStorage.setItem('extension_settings', JSON.stringify(currentSettings));
-    }
+    try {
+        const currentSettings = JSON.parse(localStorage.getItem('extension_settings') || '{}');
+        if (!currentSettings[extensionName]) {
+            currentSettings[extensionName] = defaultSettings;
+            localStorage.setItem('extension_settings', JSON.stringify(currentSettings));
+        }
 
-    originalModel = getSetting('originalModel', null);
-    console.log('[NSFW模型切换器] 初始化完成，原模型:', originalModel);
+        originalModel = getSetting('originalModel', null);
+        console.log('[NSFW模型切换器] 初始化完成，原模型:', originalModel);
+    } catch (e) {
+        console.error('[NSFW模型切换器] 初始化设置失败:', e);
+    }
 }
 
-jQuery(async () => {
+function initPlugin() {
     initSettings();
 
-    eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, onAiMessageRendered);
-    eventSource.on(event_types.MESSAGE_SENT, onUserMessageSent);
-    eventSource.on(event_types.CHAT_CHANGED, onChatChanged);
+    try {
+        import('../../extensions.js').then(({ eventSource, event_types }) => {
+            eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, onAiMessageRendered);
+            eventSource.on(event_types.MESSAGE_SENT, onUserMessageSent);
+            eventSource.on(event_types.CHAT_CHANGED, onChatChanged);
 
-    console.log('[NSFW模型切换器] 事件监听已注册');
-    console.log('[NSFW模型切换器] 插件加载完成');
-});
+            console.log('[NSFW模型切换器] 事件监听已注册');
+            console.log('[NSFW模型切换器] 插件加载完成');
+        });
+    } catch (e) {
+        console.error('[NSFW模型切换器] 注册事件失败:', e);
+    }
+}
+
+if (typeof jQuery !== 'undefined') {
+    jQuery(() => {
+        initPlugin();
+    });
+} else {
+    document.addEventListener('DOMContentLoaded', () => {
+        initPlugin();
+    });
+}
