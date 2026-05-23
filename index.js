@@ -15,6 +15,8 @@ try {
         let originalModel = null;
         let isTemporarySwitch = false;
         let lastAiMessage = null;
+        let eventSource = null;
+        let event_types = null;
 
         async function switchToModel(targetModel) {
             if (!targetModel) {
@@ -348,31 +350,68 @@ try {
 
         function addSettingsPanel() {
             console.log('[NSFW模型切换器] 开始添加设置面板...');
-            console.log('[NSFW模型切换器] extensions_settings元素:', $('#extensions_settings').length);
             
-            if ($('#extensions_settings').length === 0) {
-                console.error('[NSFW模型切换器] extensions_settings元素不存在');
-                return;
+            const $extensionsSettings = $('#extensions_settings');
+            console.log('[NSFW模型切换器] extensions_settings元素:', $extensionsSettings.length);
+            
+            if ($extensionsSettings.length === 0) {
+                console.warn('[NSFW模型切换器] extensions_settings元素不存在，尝试添加到body');
+                const $panel = $(createSettingsHtml());
+                $panel.css({
+                    position: 'fixed',
+                    top: '20px',
+                    right: '20px',
+                    zIndex: '9999',
+                    background: 'white',
+                    borderRadius: '8px',
+                    boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
+                    maxWidth: '400px',
+                    maxHeight: '80vh',
+                    overflowY: 'auto'
+                });
+                $('body').append($panel);
+                console.log('[NSFW模型切换器] 设置面板已添加到body');
+            } else {
+                try {
+                    const settingsHtml = createSettingsHtml();
+                    console.log('[NSFW模型切换器] 设置HTML已创建');
+                    
+                    const $panel = $(settingsHtml);
+                    console.log('[NSFW模型切换器] jQuery对象已创建');
+                    
+                    $extensionsSettings.append($panel);
+                    console.log('[NSFW模型切换器] 设置面板已添加到extensions_settings');
+                } catch (e) {
+                    console.error('[NSFW模型切换器] 添加设置面板失败:', e);
+                }
             }
+            
+            loadSettings();
+            console.log('[NSFW模型切换器] 设置已加载');
+            
+            initSettingsListeners();
+            console.log('[NSFW模型切换器] 设置监听器已初始化');
+        }
 
+        async function registerEventListeners() {
+            console.log('[NSFW模型切换器] 尝试注册事件监听...');
+            
             try {
-                const settingsHtml = createSettingsHtml();
-                console.log('[NSFW模型切换器] 设置HTML已创建');
+                const module = await import('../../extensions.js');
+                eventSource = module.eventSource;
+                event_types = module.event_types;
                 
-                const $panel = $(settingsHtml);
-                console.log('[NSFW模型切换器] jQuery对象已创建');
-                
-                $('#extensions_settings').append($panel);
-                console.log('[NSFW模型切换器] 设置面板已添加到DOM');
-                
-                loadSettings();
-                console.log('[NSFW模型切换器] 设置已加载');
-                
-                initSettingsListeners();
-                console.log('[NSFW模型切换器] 设置监听器已初始化');
-                
+                eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, onAiMessageRendered);
+                eventSource.on(event_types.MESSAGE_SENT, onUserMessageSent);
+                eventSource.on(event_types.CHAT_CHANGED, onChatChanged);
+                console.log('[NSFW模型切换器] 事件监听注册成功');
             } catch (e) {
-                console.error('[NSFW模型切换器] 添加设置面板失败:', e);
+                console.warn('[NSFW模型切换器] 注册事件失败:', e.message);
+                console.log('[NSFW模型切换器] 将使用定时器轮询方式');
+                
+                setTimeout(() => {
+                    registerEventListeners();
+                }, 3000);
             }
         }
 
@@ -385,15 +424,7 @@ try {
                 console.log('[NSFW模型切换器] 已恢复原模型:', originalModel);
             }
             
-            try {
-                const { eventSource, event_types } = await import('../../extensions.js');
-                eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, onAiMessageRendered);
-                eventSource.on(event_types.MESSAGE_SENT, onUserMessageSent);
-                eventSource.on(event_types.CHAT_CHANGED, onChatChanged);
-                console.log('[NSFW模型切换器] 事件监听已注册');
-            } catch (e) {
-                console.error('[NSFW模型切换器] 注册事件失败:', e);
-            }
+            registerEventListeners();
 
             if (typeof jQuery !== 'undefined') {
                 console.log('[NSFW模型切换器] jQuery已加载');
