@@ -36,6 +36,11 @@ const SOURCE_TO_FIELD = {
     'siliconflow': 'siliconflow_model',
 };
 
+// 各来源在 oai_settings 中对应的 API URL 字段名（多数来源使用服务端默认 URL，无需保存）
+const SOURCE_TO_API_URL_FIELD = {
+    'custom': 'custom_url',
+};
+
 const SUPPORTED_SOURCES = Object.keys(SOURCE_TO_FIELD);
 
 let settingsSnapshot = null;
@@ -64,13 +69,10 @@ function takeSnapshot() {
             }
         }
 
-        const apiUrlField = snapshot.chat_completion_source + '_api_url';
-        const apiKeyField = snapshot.chat_completion_source + '_api_key';
-        if (oai_settings[apiUrlField] !== undefined) {
+        const source = snapshot.chat_completion_source;
+        const apiUrlField = SOURCE_TO_API_URL_FIELD[source];
+        if (apiUrlField && oai_settings[apiUrlField] !== undefined) {
             snapshot.api_url = oai_settings[apiUrlField];
-        }
-        if (oai_settings[apiKeyField] !== undefined) {
-            snapshot.api_key = oai_settings[apiKeyField];
         }
 
         snapshot.streaming = oai_settings.streaming;
@@ -187,11 +189,12 @@ export async function switchToModel(targetModel, targetSource, targetApiUrl, tar
 
         oai_settings[targetField] = targetModel;
 
-        // 用插件配置覆盖目标来源的 API 地址和密钥（不管酒馆是否配置过）
         if (targetApiUrl) {
-            const urlField = targetSource_ + '_api_url';
-            oai_settings[urlField] = targetApiUrl;
-            addLog('已设置目标 API 地址: ' + targetApiUrl, 'info');
+            const urlField = SOURCE_TO_API_URL_FIELD[targetSource_];
+            if (urlField) {
+                oai_settings[urlField] = targetApiUrl;
+                addLog('已设置目标 API 地址: ' + targetApiUrl, 'info');
+            }
         }
 
         if (targetApiKey) {
@@ -246,9 +249,11 @@ export async function restoreOriginalModel() {
 
         // 恢复 API 地址
         if (settingsSnapshot.api_url !== undefined) {
-            const urlField = source + '_api_url';
-            oai_settings[urlField] = settingsSnapshot.api_url;
-            addLog('已恢复 API 地址', 'info');
+            const urlField = SOURCE_TO_API_URL_FIELD[source];
+            if (urlField) {
+                oai_settings[urlField] = settingsSnapshot.api_url;
+                addLog('已恢复 API 地址', 'info');
+            }
         }
 
         // 恢复 API 密钥
