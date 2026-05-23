@@ -1,0 +1,46 @@
+{
+  "name": "Auto Model Switcher",
+  "version": "1.0.0",
+  "description": "使用轻量化模型智能判断对话场景，自动切换最适合的生成模型",
+  "author": "ICU-bit",
+  "license": "MIT",
+  "sillytavern_version": ">=1.0.0",
+  "scripts": [
+    {
+      "name": "主脚本",
+      "file": "plugin.js",
+      "function": "init"
+    }
+  ],
+  "dependencies": {},
+  "optional_dependencies": {},
+  "settings": [
+    {
+      "name": "启用自动切换",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "name": "场景分析模型",
+      "type": "string",
+      "default": "gpt-3.5-turbo"
+    },
+    {
+      "name": "模型池",
+      "type": "array",
+      "default": ["gpt-3.5-turbo", "gpt-4"]
+    },
+    {
+      "name": "切换敏感度",
+      "type": "slider",
+      "min": 0.1,
+      "max": 1.0,
+      "default": 0.5
+    },
+    {
+      "name": "显示切换提示",
+      "type": "boolean",
+      "default": true
+    }
+  ]
+}
