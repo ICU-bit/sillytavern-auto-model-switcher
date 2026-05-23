@@ -1,4 +1,4 @@
-console.log('[NSFW模型切换器] 插件开始加载...');
+import { eventSource, event_types, saveSettingsDebounced, oai_settings } from '../../../script.js';
 
 const extension_name = 'nsfw-model-switcher';
 let logs = [];
@@ -431,14 +431,14 @@ async function switchToModel(targetModel, targetSource, targetApiUrl, targetApiK
         const settings = loadSettings();
         
         // 访问 SillyTavern 的 oai_settings
-        if (!window.oai_settings) {
+        if (!oai_settings) {
             addLog('无法访问 oai_settings 对象', 'error');
             return false;
         }
 
         // 保存原始设置（如果还没保存）
         if (!originalModel && !isTemporarySwitch) {
-            const currentModelInfo = getCurrentModelFromOaiSettings(window.oai_settings);
+            const currentModelInfo = getCurrentModelFromOaiSettings(oai_settings);
             if (currentModelInfo) {
                 originalModel = currentModelInfo.model;
                 originalSource = currentModelInfo.source;
@@ -465,17 +465,17 @@ async function switchToModel(targetModel, targetSource, targetApiUrl, targetApiK
         }
 
         // 切换来源（如果需要）
-        if (source !== window.oai_settings.chat_completion_source) {
-            window.oai_settings.chat_completion_source = source;
+        if (source !== oai_settings.chat_completion_source) {
+            oai_settings.chat_completion_source = source;
             addLog('切换来源到: ' + source, 'info');
         }
 
         // 切换模型
-        window.oai_settings[targetField] = targetModel;
+        oai_settings[targetField] = targetModel;
 
-        // 保存设置（如果有 saveSettingsDebounced 函数）
-        if (window.saveSettingsDebounced) {
-            window.saveSettingsDebounced();
+        // 保存设置
+        if (saveSettingsDebounced) {
+            saveSettingsDebounced();
         }
 
         isTemporarySwitch = true;
@@ -501,7 +501,7 @@ async function restoreOriginalModel() {
 
     try {
         // 访问 SillyTavern 的 oai_settings
-        if (!window.oai_settings) {
+        if (!oai_settings) {
             addLog('无法访问 oai_settings 对象', 'error');
             return false;
         }
@@ -510,18 +510,18 @@ async function restoreOriginalModel() {
 
         // 恢复来源
         if (originalSource) {
-            window.oai_settings.chat_completion_source = originalSource;
+            oai_settings.chat_completion_source = originalSource;
         }
 
         // 恢复模型
         const targetField = sourceToFieldMap[originalSource || 'openai'];
         if (targetField) {
-            window.oai_settings[targetField] = originalModel;
+            oai_settings[targetField] = originalModel;
         }
 
         // 保存设置
-        if (window.saveSettingsDebounced) {
-            window.saveSettingsDebounced();
+        if (saveSettingsDebounced) {
+            saveSettingsDebounced();
         }
 
         isTemporarySwitch = false;
@@ -542,22 +542,42 @@ async function restoreOriginalModel() {
     }
 }
 
-async function onCharacterMessageRendered(data) {
+// 当 AI 开始生成回复时触发
+async function onGenerationStarted(type, params, dryRun) {
     try {
         const settings = loadSettings();
-        if (!settings.enabled) {
+        if (!settings.enabled || dryRun) {
             return;
         }
 
-        const chatId = data.chatId || data.messageId;
-        
-        const content = data.mes || data.message || '';
-        
         if (settings.debugMode) {
-            addLog('捕获 AI 回复', 'info');
+            addLog('捕获生成开始事件: type=' + type, 'info');
         }
 
-        const nsfwDetected = await detectNSFW(content);
+        // 获取上一条 AI 消息（最新的一条）
+        const chat = window.chat || [];
+        let contentToCheck = '';
+
+        // 从聊天记录中查找最近的 AI 消息
+        for (let i = chat.length - 1; i >= 0; i--) {
+            const message = chat[i];
+            if (message && !message.is_user && message.mes) {
+                contentToCheck = message.mes;
+                break;
+            }
+        }
+
+        if (!contentToCheck) {
+            if (settings.debugMode) {
+                addLog('未找到上一条 AI 消息，使用默认模型', 'info');
+            }
+            if (isTemporarySwitch) {
+                await restoreOriginalModel();
+            }
+            return;
+        }
+
+        const nsfwDetected = await detectNSFW(contentToCheck);
 
         if (nsfwDetected === true) {
             if (settings.modelA) {
@@ -574,22 +594,42 @@ async function onCharacterMessageRendered(data) {
             await restoreOriginalModel();
         }
     } catch (e) {
-        addLog('处理 AI 消息失败: ' + e.message, 'error');
+        addLog('处理生成开始事件失败: ' + e.message, 'error');
+    }
+}
+
+// 当 AI 消息渲染完成时触发（备用逻辑）
+async function onCharacterMessageRendered(messageId, type) {
+    try {
+        const settings = loadSettings();
+        if (!settings.enabled) {
+            return;
+        }
+
+        const chat = window.chat || [];
+        const message = chat[messageId];
+        const content = message?.mes || '';
+
+        if (settings.debugMode) {
+            addLog('捕获 AI 回复渲染完成: messageId=' + messageId + ', type=' + type, 'info');
+        }
+
+        // 这里可以做一些后续处理，但主要的模型切换已经在 onGenerationStarted 中完成了
+    } catch (e) {
+        addLog('处理 AI 消息渲染完成事件失败: ' + e.message, 'error');
     }
 }
 
 function registerEventListeners() {
     try {
-        addLog('等待酒馆事件系统', 'info');
-        
-        if (window.eventSource && window.event_types) {
-            window.eventSource.on(window.event_types.CHARACTER_MESSAGE_RENDERED, onCharacterMessageRendered);
-            addLog('事件监听注册成功', 'success');
-        } else {
-            addLog('酒馆事件系统未就绪', 'warning');
-        }
+        addLog('注册事件监听器...', 'info');
+        // 监听生成开始事件，这是主要的切换时机
+        eventSource.on(event_types.GENERATION_STARTED, onGenerationStarted);
+        // 同时也监听消息渲染完成事件作为备用
+        eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, onCharacterMessageRendered);
+        addLog('事件监听器注册成功', 'success');
     } catch (e) {
-        addLog('事件监听注册失败: ' + e.message, 'error');
+        addLog('事件监听器注册失败: ' + e.message, 'error');
     }
 }
 
@@ -610,7 +650,7 @@ function addSettingsPanel() {
             background: 'white',
             borderRadius: '8px',
             boxShadow: '0 2px 10px rgba(0,0,0,0.2)',
-            zIndex: '999999',
+            zIndex: '99999',
             maxWidth: '450px',
             maxHeight: '90vh',
             overflowY: 'auto'
@@ -621,20 +661,15 @@ function addSettingsPanel() {
     }
 }
 
-try {
-    addLog('插件开始加载...', 'info');
-    
-    $(document).ready(() => {
-        addLog('DOM 已准备好', 'info');
-        
-        setTimeout(() => {
-            addSettingsPanel();
-            registerEventListeners();
-            addLog('插件加载完成！', 'success');
-        }, 500);
-    });
-    
-} catch (error) {
-    console.error('[NSFW模型切换器] 加载出错:', error);
-    addLog('加载出错: ' + error.message, 'error');
+async function init() {
+    addLog('插件正在初始化...', 'info');
 }
+
+async function activate() {
+    addLog('插件正在激活...', 'info');
+    addSettingsPanel();
+    registerEventListeners();
+    addLog('插件加载完成！', 'success');
+}
+
+export { init, activate };
