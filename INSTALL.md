@@ -1,40 +1,65 @@
 # NSFW模型切换器 - 本地安装指南
 
-## 安装步骤
+## 通过插件管理页面安装（推荐）
 
-1. **克隆或下载插件**
-   ```
-   git clone https://github.com/ICU-bit/sillytavern-auto-model-switcher.git
-   ```
-   或者下载ZIP包并解压
+### 安装步骤
 
-2. **复制到酒馆插件目录**
-   将 `sillytavern-auto-model-switcher` 文件夹复制到：
+1. **打开酒馆**
+   - 启动 SillyTavern
+   - 点击左侧 **"扩展"** 图标
+
+2. **下载插件**
+   - 切换到 **"下载扩展和资源"** 标签页
+   - 在 **"自定义插件URL"** 输入框中填入：
+     ```
+     https://github.com/ICU-bit/sillytavern-auto-model-switcher
+     ```
+   - 点击 **"安装"** 按钮
+
+3. **启用插件**
+   - 切换到 **"已安装的扩展"** 标签页
+   - 找到 **"NSFW模型切换器"**
+   - 点击开关启用
+
+4. **验证安装**
+   - 打开浏览器控制台（F12）
+   - 应该能看到：
+     ```
+     [NSFW模型切换器] 插件加载完成
+     ```
+
+## 手动安装（备选方案）
+
+如果上述方法失败，可以使用手动安装：
+
+1. 下载ZIP包：
+   [https://github.com/ICU-bit/sillytavern-auto-model-switcher/archive/refs/heads/master.zip](https://github.com/ICU-bit/sillytavern-auto-model-switcher/archive/refs/heads/master.zip)
+
+2. 解压ZIP包，将文件夹重命名为 `sillytavern-auto-model-switcher`
+
+3. 复制到酒馆插件目录：
    ```
-   SillyTavern安装目录/scripts/extensions/third-party/
+   SillyTavern/public/scripts/extensions/third-party/
    ```
 
-3. **重启SillyTavern**
+4. 重启酒馆
 
-4. **在插件管理中启用**
-   - 打开酒馆
-   - 点击"扩展"标签
-   - 找到"NSFW模型切换器"
-   - 点击启用
+## 配置插件
 
-5. **配置插件**
-   在浏览器控制台（F12）中运行：
-   ```javascript
-   localStorage.setItem('extension_settings', JSON.stringify({
-       'nsfw-model-switcher': {
-           enabled: true,
-           nsfwApiUrl: '你的NSFW检测API地址',
-           nsfwApiKey: '你的API密钥',
-           nsfwModelName: 'nsfw-detector',
-           modelA: '要切换的目标模型名称'
-       }
-   }));
-   ```
+安装启用后，在浏览器控制台（F12）配置API：
+
+```javascript
+localStorage.setItem('extension_settings', JSON.stringify({
+    'nsfw-model-switcher': {
+        enabled: true,
+        nsfwApiUrl: '你的NSFW检测API地址',
+        nsfwApiKey: '你的API密钥',
+        modelA: '要切换的目标模型名称'
+    }
+}));
+```
+
+配置后刷新页面使配置生效。
 
 ## 测试
 
@@ -46,8 +71,16 @@
    [NSFW模型切换器] 检测结果: 0/1
    ```
 
-## 注意事项
+## 常见问题
 
-- 当前版本为Demo，仅包含基本框架
-- 需要配置NSFW检测API才能实际工作
-- 模型切换是临时的，插件不接管时保持原配置
+### Q: 插件加载失败怎么办？
+A: 确保正确填写了仓库URL，尝试手动安装方式。
+
+### Q: 如何确认插件已加载？
+A: 查看浏览器控制台，应该能看到 `[NSFW模型切换器] 插件加载完成`。
+
+### Q: 如何查看当前配置？
+A: 在控制台运行：
+```javascript
+console.log(JSON.parse(localStorage.getItem('extension_settings'))['nsfw-model-switcher']);
+```
