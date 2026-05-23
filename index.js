@@ -18,7 +18,8 @@ try {
         let eventSource = null;
         let event_types = null;
         let retryCount = 0;
-        const MAX_RETRIES = 10;
+        const MAX_RETRIES = 60;
+        const RETRY_INTERVAL = 1000;
 
         async function switchToModel(targetModel) {
             if (!targetModel) {
@@ -484,7 +485,8 @@ try {
         }
 
         function registerEventListeners() {
-            addLog('尝试注册事件监听...', 'info');
+            retryCount++;
+            addLog('尝试注册事件监听 (' + retryCount + '/' + MAX_RETRIES + ')...', 'info');
             
             if (window.eventSource && window.event_types) {
                 eventSource = window.eventSource;
@@ -493,13 +495,13 @@ try {
                 eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, onAiMessageRendered);
                 eventSource.on(event_types.MESSAGE_SENT, onUserMessageSent);
                 eventSource.on(event_types.CHAT_CHANGED, onChatChanged);
-                addLog('事件监听注册成功', 'success');
+                addLog('事件监听注册成功！插件已准备就绪。', 'success');
                 retryCount = 0;
             } else if (retryCount < MAX_RETRIES) {
-                retryCount++;
-                setTimeout(registerEventListeners, 1000);
+                setTimeout(registerEventListeners, RETRY_INTERVAL);
             } else {
-                addLog('事件监听注册失败: 酒馆扩展系统未就绪', 'warning');
+                addLog('事件监听注册失败: 酒馆扩展系统未就绪（等待60秒后仍不可用）', 'warning');
+                addLog('提示: 请确保酒馆已完全加载，并刷新页面', 'info');
                 retryCount = 0;
             }
         }
