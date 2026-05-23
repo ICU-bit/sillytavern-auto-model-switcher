@@ -28,11 +28,11 @@ export function loadSettings() {
         $('#nsfw_switcher_model_name').val(currentSettings.nsfwModelName || 'nsfw-detector');
         $('#nsfw_switcher_model_a').val(currentSettings.modelA || '');
         $('#nsfw_switcher_prompt').val(currentSettings.prompt || defaultSettings.prompt);
-        $('#nsfw_switcher_show_notification').prop('checked', currentSettings.showNotification);
-        $('#nsfw_switcher_debug_mode').prop('checked', currentSettings.debugMode);
+        $('#nsfw_switcher_show_notification').prop('checked', currentSettings.showNotification !== false);
+        $('#nsfw_switcher_debug_mode').prop('checked', currentSettings.debugMode === true);
         $('#nsfw_switcher_max_length').val(currentSettings.maxLength || 2000);
         
-        console.log('[NSFW模型切换器] 设置已加载');
+        updatePluginStatus();
     } catch (e) {
         console.error('[NSFW模型切换器] 加载设置失败:', e);
     }
@@ -59,7 +59,7 @@ export function saveSettings() {
         
         localStorage.setItem('extension_settings', JSON.stringify(settings));
         
-        console.log('[NSFW模型切换器] 设置已保存');
+        updatePluginStatus();
     } catch (e) {
         console.error('[NSFW模型切换器] 保存设置失败:', e);
     }
@@ -87,32 +87,6 @@ export function setSetting(name, value) {
     }
 }
 
-export function initSettingsListeners() {
-    $('#nsfw_switcher_enabled, #nsfw_switcher_show_notification, #nsfw_switcher_debug_mode').on('change', saveSettings);
-    $('#nsfw_switcher_api_url, #nsfw_switcher_api_key, #nsfw_switcher_model_name, #nsfw_switcher_model_a').on('input', debounce(saveSettings, 500));
-    $('#nsfw_switcher_prompt').on('input', debounce(saveSettings, 1000));
-    $('#nsfw_switcher_max_length').on('change', saveSettings);
-    
-    $('#nsfw_switcher_test_btn').on('click', async () => {
-        const testContent = '这是一个测试内容。';
-        if (typeof window.testNsfwDetection === 'function') {
-            const result = await window.testNsfwDetection(testContent);
-            alert(`测试结果: ${result === true ? 'NSFW' : result === false ? '正常' : '检测失败'}`);
-        } else {
-            alert('请先配置NSFW检测API');
-        }
-    });
-    
-    $('#nsfw_switcher_restore_btn').on('click', async () => {
-        if (typeof window.restoreNsfwOriginalModel === 'function') {
-            await window.restoreNsfwOriginalModel();
-            updateStatusDisplay();
-        }
-    });
-    
-    console.log('[NSFW模型切换器] 设置监听器已初始化');
-}
-
 function debounce(func, wait) {
     let timeout;
     return function executedFunction(...args) {
@@ -125,10 +99,126 @@ function debounce(func, wait) {
     };
 }
 
-export function updateStatusDisplay(currentModel, originalModel, isSwitched) {
-    $('#nsfw_switcher_current_model').text(currentModel || '未检测');
-    $('#nsfw_switcher_original_model').text(originalModel || '未保存');
-    $('#nsfw_switcher_switch_status').text(isSwitched ? '已切换' : '正常');
+export function initSettingsListeners() {
+    $('#nsfw_switcher_enabled').on('change', () => {
+        saveSettings();
+        updatePluginStatus();
+    });
+    
+    $('#nsfw_switcher_api_url, #nsfw_switcher_api_key, #nsfw_switcher_model_name, #nsfw_switcher_model_a').on('input', debounce(saveSettings, 500));
+    $('#nsfw_switcher_prompt').on('input', debounce(saveSettings, 1000));
+    $('#nsfw_switcher_max_length').on('change', saveSettings);
+    $('#nsfw_switcher_show_notification, #nsfw_switcher_debug_mode').on('change', saveSettings);
+    
+    $('#nsfw_switcher_test_btn').on('click', async () => {
+        const testContent = '这是一个测试内容。请判断这个内容是否包含NSFW元素。';
+        const apiUrl = $('#nsfw_switcher_api_url').val().trim();
+        const apiKey = $('#nsfw_switcher_api_key').val().trim();
+        const modelName = $('#nsfw_switcher_model_name').val().trim() || 'nsfw-detector';
+        
+        if (!apiUrl) {
+            showToast('请先配置NSFW检测API地址', 'error');
+            return;
+        }
+        
+        try {
+            const response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {})
+                },
+                body: JSON.stringify({
+                    model: modelName,
+                    messages: [{
+                        role: 'user',
+                        content: testContent
+                    }],
+                    temperature: 0.0,
+                    max_tokens: 1
+                })
+            });
+            
+            if (!response.ok) {
+                throw new Error(`API请求失败: ${response.status}`);
+            }
+            
+            const data = await response.json();
+            const result = data.choices?.[0]?.message?.content?.trim();
+            
+            if (result === '0') {
+                showToast('✅ 测试成功！API连接正常，返回结果：正常内容', 'success');
+            } else if (result === '1') {
+                showToast('⚠️ 测试成功！但模型判断为NSFW内容', 'warning');
+            } else {
+                showToast(`❌ 测试失败：无法解析结果 "${result}"`, 'error');
+            }
+        } catch (error) {
+            showToast(`❌ 测试失败：${error.message}`, 'error');
+        }
+    });
+    
+    $('#nsfw_switcher_restore_btn').on('click', async () => {
+        if (typeof window.restoreNsfwOriginalModel === 'function') {
+            const result = await window.restoreNsfwOriginalModel();
+            if (result) {
+                showToast('✅ 已恢复原模型', 'success');
+            } else {
+                showToast('ℹ️ 无需恢复，当前已是原模型', 'info');
+            }
+            updatePluginStatus();
+        }
+    });
+    
+    $('#nsfw_switcher_reset_btn').on('click', () => {
+        if (confirm('确定要重置所有设置为默认值吗？')) {
+            localStorage.setItem('extension_settings', JSON.stringify({
+                [extensionName]: defaultSettings
+            }));
+            loadSettings();
+            showToast('✅ 设置已重置为默认值', 'success');
+        }
+    });
+}
+
+function showToast(message, type = 'info') {
+    if (typeof toastr !== 'undefined') {
+        switch (type) {
+            case 'success':
+                toastr.success(message);
+                break;
+            case 'error':
+                toastr.error(message);
+                break;
+            case 'warning':
+                toastr.warning(message);
+                break;
+            default:
+                toastr.info(message);
+        }
+    } else {
+        alert(message);
+    }
+}
+
+export function updatePluginStatus() {
+    const enabled = $('#nsfw_switcher_enabled').prop('checked');
+    const apiUrl = $('#nsfw_switcher_api_url').val().trim();
+    const modelA = $('#nsfw_switcher_model_a').val().trim();
+    
+    const statusIndicator = $('#nsfw_switcher_status_indicator');
+    const statusText = $('#nsfw_switcher_status_text');
+    
+    if (!enabled) {
+        statusIndicator.removeClass('status-active status-warning').addClass('status-inactive');
+        statusText.text('已禁用');
+    } else if (!apiUrl || !modelA) {
+        statusIndicator.removeClass('status-active status-inactive').addClass('status-warning');
+        statusText.text('配置不完整');
+    } else {
+        statusIndicator.removeClass('status-inactive status-warning').addClass('status-active');
+        statusText.text('运行中');
+    }
 }
 
 export function getSettings() {
