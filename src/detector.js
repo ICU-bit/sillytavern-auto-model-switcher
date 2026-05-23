@@ -6,6 +6,15 @@
 import { addLog } from './logger.js';
 import { loadSettings } from './settings.js';
 
+function normalizeApiUrl(url) {
+    if (!url) return url;
+    url = url.replace(/\/+$/, '');
+    if (!url.endsWith('/chat/completions')) {
+        url += '/chat/completions';
+    }
+    return url;
+}
+
 /**
  * 检测文本是否为 NSFW
  * @param {string} content - 要检测的文本内容
@@ -30,9 +39,11 @@ export async function detectNSFW(content) {
         }
 
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15秒超时
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-        const response = await fetch(nsfwApiUrl, {
+        const apiUrl = normalizeApiUrl(nsfwApiUrl);
+
+        const response = await fetch(apiUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
