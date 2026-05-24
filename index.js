@@ -1,4 +1,22 @@
 /**
+ * NSFW 模型切换器 (SillyTavern Auto Model Switcher)
+ * Copyright (C) 2025 ICU-bit
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+/**
  * NSFW 模型切换器 — 入口文件
  *
  * 架构说明：
@@ -394,8 +412,6 @@ function setupLogRendering() {
 // ── 初始化入口 ────────────────────────────────────────
 
 jQuery(async () => {
-    extension_settings[EXTENSION_NAME] = extension_settings[EXTENSION_NAME] || {};
-    Object.assign(DEFAULT_SETTINGS, extension_settings[EXTENSION_NAME]);
     extension_settings[EXTENSION_NAME] = { ...DEFAULT_SETTINGS, ...extension_settings[EXTENSION_NAME] };
 
     addLog('插件正在激活...', 'info');

@@ -1,4 +1,22 @@
 /**
+ * NSFW 模型切换器 (SillyTavern Auto Model Switcher)
+ * Copyright (C) 2025 ICU-bit
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+/**
  * NSFW 模型切换器 - 设置模块
  * 使用 SillyTavern 标准扩展设置 API
  */
@@ -37,13 +55,6 @@ export function loadSettings() {
     }
     // 合并默认值，确保新增字段也有默认值
     return { ...DEFAULT_SETTINGS, ...stored };
-}
-
-/**
- * 保存设置
- */
-export function saveSettings() {
-    saveSettingsDebounced();
 }
 
 /**

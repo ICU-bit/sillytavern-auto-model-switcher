@@ -1,4 +1,22 @@
 /**
+ * NSFW 模型切换器 (SillyTavern Auto Model Switcher)
+ * Copyright (C) 2025 ICU-bit
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+/**
  * NSFW 模型切换器 - 状态机模块
  *
  * 管理插件的运行状态，替代原来的 isTemporarySwitch 布尔值。
@@ -27,8 +45,6 @@ export class ModelStateMachine {
     constructor() {
         /** @type {string} 当前状态 */
         this._state = State.IDLE;
-        /** @type {boolean} 是否已保存原模型信息 */
-        this._hasOriginalSnapshot = false;
     }
 
     /** @returns {string} 当前状态 */
@@ -59,16 +75,6 @@ export class ModelStateMachine {
     /** @returns {boolean} 是否有待恢复动作 */
     get shouldRestore() {
         return this._state === State.PENDING_RESTORE;
-    }
-
-    /** @returns {boolean} 原始模型快照是否已保存 */
-    get hasOriginalSnapshot() { return this._hasOriginalSnapshot; }
-
-    /**
-     * 标记原始模型已保存
-     */
-    markOriginalSaved() {
-        this._hasOriginalSnapshot = true;
     }
 
     /**
@@ -120,7 +126,6 @@ export class ModelStateMachine {
         }
         if (this._state === State.PENDING_RESTORE) {
             this._state = State.IDLE;
-            this._hasOriginalSnapshot = false;
             return 'restore';
         }
         return 'none';
@@ -131,15 +136,6 @@ export class ModelStateMachine {
      */
     onManualRestore() {
         this._state = State.IDLE;
-        this._hasOriginalSnapshot = false;
-    }
-
-    /**
-     * 重置到空闲状态
-     */
-    reset() {
-        this._state = State.IDLE;
-        this._hasOriginalSnapshot = false;
     }
 
     /**

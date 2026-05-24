@@ -25,7 +25,7 @@
    - 打开浏览器控制台（F12）
    - 应该能看到：
      ```
-     [NSFW模型切换器] 插件加载完成
+     [NSFW模型切换器] 插件加载完成！
      ```
 
 ## 手动安装（备选方案）
@@ -46,29 +46,34 @@
 
 ## 配置插件
 
-安装启用后，在浏览器控制台（F12）配置API：
+安装启用后，在 SillyTavern 右侧扩展设置面板中找到 **NSFW模型切换器** 进行配置。
 
-```javascript
-localStorage.setItem('extension_settings', JSON.stringify({
-    'nsfw-model-switcher': {
-        enabled: true,
-        nsfwApiUrl: '你的NSFW检测API地址',
-        nsfwApiKey: '你的API密钥',
-        modelA: '要切换的目标模型名称'
-    }
-}));
-```
+### 必要配置
 
-配置后刷新页面使配置生效。
+| 字段 | 说明 |
+|---|---|
+| **轻量化检测模型 → API地址** | NSFW 检测 API 地址（如 https://api.siliconflow.cn/v1） |
+| **轻量化检测模型 → 模型名称** | 检测模型名（如 Qwen2.5-7B-Instruct） |
+| **切换目标模型 → 目标模型名称** | 检测到 NSFW 后切换到的模型名称 |
+| **切换目标模型 → API来源** | 切换目标的 API 来源（如 DeepSeek、Custom） |
+
+### 可选配置
+
+| 字段 | 说明 |
+|---|---|
+| **API密钥** | 检测 API / 目标 API 的密钥 |
+| **目标模型API地址** | 切换目标模型的 API 地址 |
+| **显示通知** | 切换/恢复时显示 toastr 弹窗 |
+| **调试模式** | 显示详细运行日志 |
 
 ## 测试
 
 1. 发送一条消息给AI
-2. 查看浏览器控制台（F12）
-3. 应该能看到类似日志：
+2. 在插件设置面板中打开 **调试模式**
+3. 查看插件面板内的运行日志，应能看到类似输出：
    ```
-   [NSFW模型切换器] 捕获AI回复: xxx
-   [NSFW模型切换器] 检测结果: 0/1
+   检测 AI 回复中... (长度: xxx 字)
+   检测结果: NSFW → 下次生成将切换模型
    ```
 
 ## 常见问题
@@ -77,10 +82,7 @@ localStorage.setItem('extension_settings', JSON.stringify({
 A: 确保正确填写了仓库URL，尝试手动安装方式。
 
 ### Q: 如何确认插件已加载？
-A: 查看浏览器控制台，应该能看到 `[NSFW模型切换器] 插件加载完成`。
+A: 查看浏览器控制台或扩展设置面板，应能看到 `[NSFW模型切换器] 插件加载完成！`。
 
-### Q: 如何查看当前配置？
-A: 在控制台运行：
-```javascript
-console.log(JSON.parse(localStorage.getItem('extension_settings'))['nsfw-model-switcher']);
-```
+### Q: 配置文件在哪里？
+A: 所有配置通过 SillyTavern 扩展设置面板操作，自动保存到服务器端的 settings.json 中，无需手动编辑。
