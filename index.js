@@ -287,47 +287,45 @@ async function onMessageRendered(messageId, type) {
 
     const thisDetectionId = ++currentDetectionId;
 
-    try {
-        const content = getMessageTextById(messageId) || getLastAiMessageText();
-        if (!content) {
-            if (settings.debugMode) addLog('未找到 AI 消息内容', 'info');
-            return;
+    const content = getMessageTextById(messageId) || getLastAiMessageText();
+    if (!content) {
+        if (settings.debugMode) addLog('未找到 AI 消息内容', 'info');
+        return;
+    }
+
+    if (settings.debugMode) {
+        addLog('检测 AI 回复中... (长度: ' + content.length + ' 字)', 'info');
+    }
+
+    const nsfwResult = await detectNSFW(content, detectionAbortController.signal);
+
+    // 如果用户已经swipe产生了新消息，废弃本次检测结果
+    if (thisDetectionId !== currentDetectionId) return;
+
+    if (nsfwResult === true) {
+        const didTransition = state.onNsfwDetected();
+        if (didTransition) {
+            addLog('检测结果: NSFW → 下次生成将切换模型', 'warning');
+            saveSettingsSnapshot();
         }
-
-        if (settings.debugMode) {
-            addLog('检测 AI 回复中... (长度: ' + content.length + ' 字)', 'info');
+    } else if (nsfwResult === false) {
+        const didTransition = state.onCleanDetected();
+        if (didTransition) {
+            addLog('检测结果: 正常 → 下次生成将恢复原模型', 'info');
+        } else if (settings.debugMode) {
+            addLog('检测结果: 正常，保持当前模型', 'info');
         }
-
-        const nsfwResult = await detectNSFW(content, detectionAbortController.signal);
-
-        // 如果用户已经swipe产生了新消息，废弃本次检测结果
-        if (thisDetectionId !== currentDetectionId) return;
-
-        if (nsfwResult === true) {
-            const didTransition = state.onNsfwDetected();
-            if (didTransition) {
-                addLog('检测结果: NSFW → 下次生成将切换模型', 'warning');
-                saveSettingsSnapshot();
-            }
-        } else if (nsfwResult === false) {
-            const didTransition = state.onCleanDetected();
-            if (didTransition) {
-                addLog('检测结果: 正常 → 下次生成将恢复原模型', 'info');
-            } else if (settings.debugMode) {
-                addLog('检测结果: 正常，保持当前模型', 'info');
-            }
-        } else {
-            const didTransition = state.onDetectionFailed();
-            if (didTransition) {
-                addLog('检测失败 → 下次生成将恢复原模型', 'warning');
-            }
+    } else {
+        const didTransition = state.onDetectionFailed();
+        if (didTransition) {
+            addLog('检测失败 → 下次生成将恢复原模型', 'warning');
         }
+    }
 
-        // 更新 UI 状态指示
-        const $container = $('#nsfw_switcher_state_text');
-        if ($container.length) {
-            $container.text('状态机: ' + state.getStateDescription() + (isInterceptEnabled() ? ' [拦截中]' : ''));
-        }
+    // 更新 UI 状态指示
+    const $container = $('#nsfw_switcher_state_text');
+    if ($container.length) {
+        $container.text('状态机: ' + state.getStateDescription() + (isInterceptEnabled() ? ' [拦截中]' : ''));
     }
 }
 
