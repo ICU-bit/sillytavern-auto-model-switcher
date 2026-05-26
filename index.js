@@ -37,7 +37,7 @@
 
 import { eventSource, event_types } from '../../../../script.js';
 import { extension_settings } from '../../../extensions.js';
-import { addLog, clearLogs, setRenderCallback, renderLogsHtml } from './src/logger.js';
+import { addLog, clearLogs, setRenderCallback, renderLogsHtml, getLogs } from './src/logger.js';
 import {
     EXTENSION_NAME,
     DEFAULT_SETTINGS,
@@ -445,3 +445,20 @@ jQuery(async () => {
 
     addLog('插件加载完成！', 'success');
 });
+
+// ── 调试诊断（在浏览器控制台输入 __nsfwDebug() 即可导出） ────────
+
+window.__nsfwDebug = function () {
+    const s = loadSettings();
+    const logs = getLogs();
+    console.log('======== NSFW 模型切换器 诊断信息 ========');
+    console.log('插件已加载:', isReady);
+    console.log('状态机:', state.getStateDescription());
+    console.log('拦截器:', isInterceptEnabled() ? '启用' : '禁用');
+    console.log('当前设置:', JSON.stringify(s, null, 2));
+    console.log('最近日志 (' + logs.length + ' 条):');
+    logs.slice(0, 20).forEach(function (log) {
+        console.log('  [' + log.timestamp + '] [' + log.type + '] ' + log.message);
+    });
+    console.log('==========================================');
+};
