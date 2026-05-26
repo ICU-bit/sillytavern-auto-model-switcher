@@ -1,4 +1,22 @@
 /**
+ * NSFW 模型切换器 (SillyTavern Auto Model Switcher)
+ * Copyright (C) 2025 ICU-bit
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+/**
  * NSFW 模型切换器 - 直接 API 调用模块 (Plan B)
  *
  * Plan A 的缺陷：修改 oai_settings 依赖 ST 在正确的时机读取，但 ST

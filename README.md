@@ -1,6 +1,6 @@
 # NSFW模型切换器
 
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPLv3-blue.svg)](LICENSE)
 [![JavaScript](https://img.shields.io/badge/language-JavaScript-yellow.svg)](index.js)
 [![SillyTavern](https://img.shields.io/badge/SillyTavern-Extension-FF6B6B.svg)](https://sillytavern.app)
 
