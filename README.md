@@ -56,43 +56,29 @@ git clone https://github.com/ICU-bit/sillytavern-auto-model-switcher.git
 | 字段 | 说明 |
 |---|---|
 | **轻量化检测模型 → API地址** | NSFW 检测 API 地址（如硅基流动 `https://api.siliconflow.cn/v1`） |
-| **轻量化检测模型 → 模型名称** | 检测模型名（如 `Qwen2.5-7B-Instruct`） |
+| **轻量化检测模型 → 模型名称** | 检测模型名（如 `Qwen2.5-14B-Instruct`） |
 | **切换目标模型 → 目标模型名称** | 检测到 NSFW 后切换到的模型名称 |
-| **切换目标模型 → API来源** | 切换目标的 API 来源（如 `DeepSeek`、`Custom`） |
+| **切换目标模型 → 目标模型API地址** | 切换目标模型的 API 地址（直调模式，需填写完整 URL） |
 
 ### 可选配置
 
 | 字段 | 说明 |
 |---|---|
-| **API密钥** | 检测 API / 目标 API 的密钥（如使用酒馆已有配置可不填） |
-| **目标模型API地址** | 切换目标模型的 API 地址（如使用酒馆已有配置可不填） |
+| **检测 API 密钥** | NSFW 检测 API 的密钥 |
+| **目标模型API密钥** | 切换目标模型的 API 密钥 |
 | **显示通知** | 切换/恢复时显示 toastr 弹窗 |
 | **调试模式** | 显示详细运行日志，方便排查问题 |
 
 ### 配置示例
 
 ```
-主模型: Custom（豆包 API）  →  检测模型: Qwen2.5-7B-Instruct（硅基流动）
+主模型: Custom（豆包 API）  →  检测模型: Qwen2.5-14B-Instruct（硅基流动）
                             →  切换目标: DeepSeek-V4-Flash（DeepSeek 官网）
 ```
 
 ---
 
 ## ⚠️ 已知问题
-
-### 恢复原模型后出现 "A parameter specified in the request is not valid"
-
-**现象**: 切换至目标模型（如 DeepSeek）正常工作，但恢复到原模型（如 Custom/豆包）后，下一次生成报参数错误。
-
-**状态**: 排查中
-
-**可能原因**:
-1. `chat_completion_source` 切换回原来源后，`oai_settings` 中原来源的 API URL/Key 未能完全还原
-2. SillyTavern 切换 `chat_completion_source` 时触发了预设加载，导致某些参数被覆盖
-
-**临时解决方案**:
-- 在 SillyTavern 的 API 连接面板中手动切换一下 API 来源再切回来
-- 或点击插件面板的 **恢复原模型** 按钮后刷新页面
 
 ### NSFW 检测模型偶发返回空内容
 
@@ -101,6 +87,14 @@ git clone https://github.com/ICU-bit/sillytavern-auto-model-switcher.git
 **原因**: 模型自身安全策略导致长内容时拒绝输出
 
 **建议**: 更换为更大或更稳定的检测模型，如 `Qwen2.5-14B-Instruct`
+
+### 目标 API 不支持 CORS
+
+**现象**: 直调目标 API 时浏览器报跨域错误，回退到原始模型
+
+**原因**: Plan B 通过浏览器直接调用目标 API，部分 API 服务端未配置 CORS 头
+
+**解决方案**: 选择支持 CORS 的 API 提供商，或通过代理转发
 
 ---
 
@@ -113,17 +107,16 @@ AI 回复完成
 CHARACTER_MESSAGE_RENDERED 事件触发
     │
     ├── 跳过用户消息
-    ├── 跳过检测进行中的并发
     │
     ▼
 获取消息内容 → 提取 <content> 标签正文
     │
     ▼
-调用检测 API
+调用检测 API（自动取消前一次未完成的检测）
     │
     ├── NSFW → 状态机: IDLE → 待切换 → 保存快照
     │
-    ├── 正常 → 状态机: 已切换 → 待恢复
+    ├── 正常 → 状态机: 已切换 → 待恢复（或 PENDING_SWITCH → IDLE）
     │
     └── 失败 → 状态机: 已切换 → 待恢复（保守处理）
                         │
@@ -132,10 +125,11 @@ CHARACTER_MESSAGE_RENDERED 事件触发
                         │
                 ┌───────┴───────┐
                 ▼               ▼
-          switchToModel()  restoreOriginalModel()
+        启用 fetch 拦截器    禁用 fetch 拦截器
                 │               │
                 ▼               ▼
-         oai_settings 已切换  oai_settings 已恢复
+       ST 请求被重定向到     ST 请求正常发往
+       目标模型 API          原模型 API
 ```
 
 ## 状态机说明
@@ -150,22 +144,24 @@ CHARACTER_MESSAGE_RENDERED 事件触发
 ## 技术架构
 
 ```
-index.js                    ← 入口控制器
+index.js                    ← 入口控制器（事件注册、设置面板）
+├── src/direct-api.js       ← [Plan B] fetch 拦截器 + 直调 API（核心）
+├── src/state.js            ← 有限状态机（IDLE → PENDING → SWITCHED → RESTORE）
+├── src/detector.js         ← NSFW 检测 API 调用
 ├── src/logger.js           ← 日志收集与渲染
 ├── src/settings.js         ← 设置持久化与 DOM 同步
-├── src/state.js            ← 有限状态机
-├── src/detector.js         ← NSFW 检测 API 调用
-└── src/model-switcher.js   ← oai_settings 快照与模型切换
+└── src/model-switcher.js   ← [Plan A 保留] oai_settings 快照（仅手动恢复用）
 ```
 
 详细技术文档见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
 ## 开发计划
 
-- [ ] **B 方案** — 插件独立调用 API，完全脱离 oai_settings 依赖
-- [ ] 独立 API 调用模块
-- [ ] 消息历史自动拼接
-- [ ] 回复注入与 UI 刷新
+- [x] **B 方案** — fetch 拦截直调 API，完全绕过 oai_settings（v1.0.0 已实现）
+- [ ] **独立消息拼接** — 自行组装聊天上下文，支持任意 API 协议
+- [ ] **预设自定义** — 为目标模型独立配置 instruct/context/sysprompt 预设
+- [ ] **多目标模型** — 支持多个 NSFW 模型按规则轮换
+- [ ] **可配置超时** — 直调 API 超时时间用户可调
 
 详见 [TODO.md](TODO.md)。
 
@@ -181,4 +177,6 @@ index.js                    ← 入口控制器
 
 ## 许可证
 
-本项目基于 [GNU General Public License v3.0](LICENSE) 开源。
+本项目基于 [GNU Affero General Public License v3.0](LICENSE) 开源。
+
+AGPL v3 是目前最严格的开源协议。任何人无论以何种形式使用或修改本项目的代码（包括通过网络提供服务），都必须公开修改后的完整源码。
