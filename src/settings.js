@@ -37,7 +37,6 @@ export const DEFAULT_SETTINGS = {
     modelA: '',
     modelAApiUrl: '',
     modelAApiKey: '',
-    modelASource: 'openai',
     showNotification: true,
     debugMode: false,
 };
@@ -70,7 +69,6 @@ export function collectAndSaveFromDom($formContainer) {
         modelA: $formContainer.find('#nsfw_switcher_model_a').val(),
         modelAApiUrl: $formContainer.find('#nsfw_switcher_model_a_api_url').val(),
         modelAApiKey: $formContainer.find('#nsfw_switcher_model_a_api_key').val(),
-        modelASource: $formContainer.find('#nsfw_switcher_model_a_source').val(),
         showNotification: $formContainer.find('#nsfw_switcher_show_notification').prop('checked'),
         debugMode: $formContainer.find('#nsfw_switcher_debug_mode').prop('checked'),
     };
@@ -90,7 +88,6 @@ export function applySettingsToDom(settings, $formContainer) {
     $formContainer.find('#nsfw_switcher_model_a').val(settings.modelA);
     $formContainer.find('#nsfw_switcher_model_a_api_url').val(settings.modelAApiUrl);
     $formContainer.find('#nsfw_switcher_model_a_api_key').val(settings.modelAApiKey);
-    $formContainer.find('#nsfw_switcher_model_a_source').val(settings.modelASource);
     $formContainer.find('#nsfw_switcher_show_notification').prop('checked', settings.showNotification);
     $formContainer.find('#nsfw_switcher_debug_mode').prop('checked', settings.debugMode);
 }
@@ -107,7 +104,7 @@ export function updateStatusIndicator(settings, $container) {
     if (!settings.enabled) {
         $indicator.css('background', '#e74c3c');
         $text.text('已禁用');
-    } else if (!settings.nsfwApiUrl || !settings.modelA) {
+    } else if (!settings.nsfwApiUrl || !settings.modelA || !settings.modelAApiUrl) {
         $indicator.css('background', '#f39c12');
         $text.text('配置不完整');
     } else {

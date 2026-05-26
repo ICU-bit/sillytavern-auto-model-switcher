@@ -20,15 +20,19 @@
  * NSFW 模型切换器 — 入口文件
  *
  * 架构说明：
- *   src/logger.js     — 日志管理
- *   src/settings.js   — ST 标准设置 API
- *   src/state.js      — 有限状态机
- *   src/detector.js   — NSFW 检测 (AI 回复完成后调用)
- *   src/model-switcher.js — 安全的模型切换 (oai_settings 快照)
+ *   src/logger.js        — 日志管理
+ *   src/settings.js      — ST 标准设置 API
+ *   src/state.js         — 有限状态机
+ *   src/detector.js      — NSFW 检测 (AI 回复完成后调用)
+ *   src/direct-api.js    — [Plan B] fetch 拦截 + 直调 API (核心)
+ *   src/model-switcher.js — [Plan A 保留] oai_settings 快照 (仅手动恢复用)
  *
  * 事件流：
- *   AI 回复完成 (CHARACTER_MESSAGE_RENDERED) → 异步检测 NSFW → 记录状态
- *   用户下次发送 → GENERATION_STARTED → 按状态决策切换/恢复 → 生成
+ *   AI 回复完成 (CHARACTER_MESSAGE_RENDERED) → 异步检测 NSFW → 更新状态机
+ *   用户下次发送 → GENERATION_STARTED → 启用/禁用 fetch 拦截器
+ *   ST 构建请求 → fetch('/api/backends/chat-completions/generate')
+ *     → 拦截器捕获 → 直调目标 API → 返回流式/非流式响应给 ST
+ *     → 失败 → toastr 通知 → 回退原始请求
  */
 
 import { eventSource, event_types } from '../../../../script.js';
@@ -44,13 +48,15 @@ import {
 } from './src/settings.js';
 import { createStateMachine } from './src/state.js';
 import { detectNSFW, getLastAiMessageText, getMessageTextById, testNsfwApi } from './src/detector.js';
-import { switchToModel, restoreOriginalModel, saveSettingsSnapshot, clearSettingsSnapshot } from './src/model-switcher.js';
+import { restoreOriginalModel, saveSettingsSnapshot, clearSettingsSnapshot } from './src/model-switcher.js';
+import { initFetchInterceptor, setInterceptEnabled, isInterceptEnabled } from './src/direct-api.js';
 
 // ── 状态 ──────────────────────────────────────────────
 
 const state = createStateMachine();
 let isReady = false;            // 初始加载完成后才启动检测
-let detectionInProgress = false; // 避免并发检测
+let currentDetectionId = 0;     // 递增ID，新消息的检测自动废弃旧结果
+let detectionAbortController = null; // 用于swipe时取消前一次检测
 
 // ── 设置面板 HTML ─────────────────────────────────────
 
@@ -111,7 +117,7 @@ function createSettingsHtml() {
                         </div>
                     </div>
 
-                    <!-- 切换目标模型 -->
+                    <!-- 切换目标模型（Plan B: 直调 API） -->
                     <div style="margin-bottom: 15px;">
                         <div style="font-weight: 600; color: #333; margin-bottom: 10px;">
                             <i class="fa-solid fa-arrow-right-arrow-left" style="margin-right: 8px;"></i>切换目标模型（NSFW场景使用）
@@ -125,7 +131,9 @@ function createSettingsHtml() {
                                    placeholder="gpt-4">
                         </div>
                         <div style="margin-bottom: 12px;">
-                            <label style="display: block; font-weight: 500; color: #555; margin-bottom: 5px; font-size: 13px;">目标模型API地址</label>
+                            <label style="display: block; font-weight: 500; color: #555; margin-bottom: 5px; font-size: 13px;">
+                                目标模型API地址 <span style="color: #e74c3c;">*</span>
+                            </label>
                             <input type="text" id="nsfw_switcher_model_a_api_url"
                                    style="width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; box-sizing: border-box;"
                                    placeholder="https://api.example.com/v1/chat/completions">
@@ -135,17 +143,6 @@ function createSettingsHtml() {
                             <input type="password" id="nsfw_switcher_model_a_api_key"
                                    style="width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; box-sizing: border-box;"
                                    placeholder="sk-... (可选)">
-                        </div>
-                        <div style="margin-bottom: 12px;">
-                            <label style="display: block; font-weight: 500; color: #555; margin-bottom: 5px; font-size: 13px;">API来源</label>
-                            <select id="nsfw_switcher_model_a_source"
-                                    style="width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; box-sizing: border-box;">
-                                <option value="openai">OpenAI</option>
-                                <option value="claude">Claude</option>
-                                <option value="openrouter">OpenRouter</option>
-                                <option value="custom">Custom</option>
-                                <option value="deepseek">DeepSeek</option>
-                            </select>
                         </div>
                         <div style="margin-bottom: 12px;">
                             <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
@@ -217,9 +214,9 @@ function bindSettingsListeners($panel) {
     const updateIndicator = () => {
         const s = loadSettings();
         updateStatusIndicator(s, $panel);
-        // 同时更新状态机状态
+        // 同时更新状态机状态 + 拦截状态
         $panel.find('#nsfw_switcher_state_text').text(
-            '状态机: ' + state.getStateDescription()
+            '状态机: ' + state.getStateDescription() + (isInterceptEnabled() ? ' [拦截中]' : '')
         );
     };
 
@@ -227,10 +224,15 @@ function bindSettingsListeners($panel) {
     $panel.on('input change',
         '#nsfw_switcher_enabled, #nsfw_switcher_api_url, #nsfw_switcher_api_key, ' +
         '#nsfw_switcher_model_name, #nsfw_switcher_model_a, #nsfw_switcher_model_a_api_url, ' +
-        '#nsfw_switcher_model_a_api_key, #nsfw_switcher_model_a_source, ' +
+        '#nsfw_switcher_model_a_api_key, ' +
         '#nsfw_switcher_show_notification, #nsfw_switcher_debug_mode',
         () => {
             collectAndSaveFromDom($panel);
+            // 如果插件被关闭，同时禁用 fetch 拦截器
+            const s = loadSettings();
+            if (!s.enabled && isInterceptEnabled()) {
+                setInterceptEnabled(false);
+            }
             updateIndicator();
         }
     );
@@ -242,12 +244,13 @@ function bindSettingsListeners($panel) {
 
     // 手动恢复
     $panel.on('click', '#nsfw_switcher_restore_btn', async () => {
+        setInterceptEnabled(false);
         state.onManualRestore();
-        const restored = await restoreOriginalModel();
-        if (!restored) {
-            addLog('未找到可恢复的快照，清除状态', 'warning');
-            clearSettingsSnapshot();
-        }
+        // 尝试从快照恢复oai_settings（Plan A兼容 + 兜底）
+        await restoreOriginalModel();
+        // 清除快照避免脏数据
+        clearSettingsSnapshot();
+        addLog('手动恢复: 将使用原始模型生成', 'success');
         updateIndicator();
     });
 
@@ -273,13 +276,14 @@ async function onMessageRendered(messageId, type) {
     // 跳过用户消息
     if (type === 'user') return;
 
-    // 避免并发检测
-    if (detectionInProgress) {
-        if (settings.debugMode) addLog('检测进行中，跳过本次', 'info');
-        return;
+    // 如果用户swipe产生了新消息，取消前一次正在进行的检测
+    if (detectionAbortController) {
+        detectionAbortController.abort();
     }
+    detectionAbortController = new AbortController();
 
-    detectionInProgress = true;
+    const thisDetectionId = ++currentDetectionId;
+
     try {
         const content = getMessageTextById(messageId) || getLastAiMessageText();
         if (!content) {
@@ -291,24 +295,27 @@ async function onMessageRendered(messageId, type) {
             addLog('检测 AI 回复中... (长度: ' + content.length + ' 字)', 'info');
         }
 
-        const nsfwResult = await detectNSFW(content);
+        const nsfwResult = await detectNSFW(content, detectionAbortController.signal);
+
+        // 如果用户已经swipe产生了新消息，废弃本次检测结果
+        if (thisDetectionId !== currentDetectionId) return;
 
         if (nsfwResult === true) {
-            state.onNsfwDetected();
-            addLog('检测结果: NSFW → 下次生成将切换模型', 'warning');
-
-            // 提前保存原始模型快照（但先不切换）
-            saveSettingsSnapshot();
+            const didTransition = state.onNsfwDetected();
+            if (didTransition) {
+                addLog('检测结果: NSFW → 下次生成将切换模型', 'warning');
+                saveSettingsSnapshot();
+            }
         } else if (nsfwResult === false) {
-            const didMarkRestore = state.onCleanDetected();
-            if (didMarkRestore) {
+            const didTransition = state.onCleanDetected();
+            if (didTransition) {
                 addLog('检测结果: 正常 → 下次生成将恢复原模型', 'info');
-            } else {
-                if (settings.debugMode) addLog('检测结果: 正常，保持当前模型', 'info');
+            } else if (settings.debugMode) {
+                addLog('检测结果: 正常，保持当前模型', 'info');
             }
         } else {
-            const didMarkRestore = state.onDetectionFailed();
-            if (didMarkRestore) {
+            const didTransition = state.onDetectionFailed();
+            if (didTransition) {
                 addLog('检测失败 → 下次生成将恢复原模型', 'warning');
             }
         }
@@ -316,15 +323,16 @@ async function onMessageRendered(messageId, type) {
         // 更新 UI 状态指示
         const $container = $('#nsfw_switcher_state_text');
         if ($container.length) {
-            $container.text('状态机: ' + state.getStateDescription());
+            $container.text('状态机: ' + state.getStateDescription() + (isInterceptEnabled() ? ' [拦截中]' : ''));
         }
-    } finally {
-        detectionInProgress = false;
     }
 }
 
 /**
- * 生成开始 → 应用状态机决策（切换/恢复）
+ * 生成开始 → Plan B：启用/禁用 fetch 拦截器
+ *
+ * 不再修改 oai_settings，而是通过拦截 ST 的 API 请求，
+ * 在请求发出时直接重定向到目标模型的 API。
  */
 async function onGenerationStarted(type, params, dryRun) {
     if (!isReady || dryRun) return;
@@ -332,14 +340,16 @@ async function onGenerationStarted(type, params, dryRun) {
     const settings = loadSettings();
     if (!settings.enabled) return;
 
-    const action = state.onGenerationStarted();
+    const action = state.getPendingAction();
 
     if (action === 'switch') {
-        addLog('生成开始 → 执行切换（上次回复为 NSFW）', 'info');
-        await switchToModel(settings.modelA, settings.modelASource, settings.modelAApiUrl, settings.modelAApiKey);
+        addLog('生成开始 → 启用拦截（上次回复为 NSFW）', 'info');
+        setInterceptEnabled(true);
+        state.onSwitchApplied();
     } else if (action === 'restore') {
-        addLog('生成开始 → 执行恢复（上次回复正常）', 'info');
-        await restoreOriginalModel();
+        addLog('生成开始 → 禁用拦截（上次回复正常）', 'info');
+        setInterceptEnabled(false);
+        state.onRestoreApplied();
     } else {
         if (settings.debugMode) addLog('生成开始 → 无需操作', 'info');
     }
@@ -347,7 +357,7 @@ async function onGenerationStarted(type, params, dryRun) {
     // 更新状态 UI
     const $container = $('#nsfw_switcher_state_text');
     if ($container.length) {
-        $container.text('状态机: ' + state.getStateDescription());
+        $container.text('状态机: ' + state.getStateDescription() + (isInterceptEnabled() ? ' [拦截中]' : ''));
     }
 }
 
@@ -373,7 +383,7 @@ function onSettingsLoaded() {
     if ($panel.length) {
         applySettingsToDom(settings, $panel);
         updateStatusIndicator(settings, $panel);
-        $panel.find('#nsfw_switcher_state_text').text('状态机: ' + state.getStateDescription());
+        $panel.find('#nsfw_switcher_state_text').text('状态机: ' + state.getStateDescription() + (isInterceptEnabled() ? ' [拦截中]' : ''));
     }
 
     isReady = true;
@@ -386,7 +396,7 @@ function registerEventListeners() {
     // [新流程] AI 回复渲染完成 → NSFW 检测 → 更新状态
     eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, onMessageRendered);
 
-    // [新流程] 生成开始 → 按状态切换/恢复
+    // [新流程] 生成开始 → 启用/禁用 fetch 拦截器
     eventSource.on(event_types.GENERATION_STARTED, onGenerationStarted);
 
     // 调试日志
@@ -415,6 +425,10 @@ jQuery(async () => {
     extension_settings[EXTENSION_NAME] = { ...DEFAULT_SETTINGS, ...extension_settings[EXTENSION_NAME] };
 
     addLog('插件正在激活...', 'info');
+
+    // Plan B: 初始化 fetch 拦截器，在 API 请求层面重定向
+    initFetchInterceptor();
+    addLog('fetch 拦截器已初始化', 'info');
 
     setupLogRendering();
 

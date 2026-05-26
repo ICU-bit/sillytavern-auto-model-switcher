@@ -78,6 +78,16 @@ export class ModelStateMachine {
     }
 
     /**
+     * 只读检查：当前状态需要生成时执行什么动作
+     * @returns {'switch'|'restore'|'none'}
+     */
+    getPendingAction() {
+        if (this._state === State.PENDING_SWITCH) return 'switch';
+        if (this._state === State.PENDING_RESTORE) return 'restore';
+        return 'none';
+    }
+
+    /**
      * 检测到 NSFW → 标记待切换
      * @returns {boolean} 是否发生了状态转换
      */
@@ -86,7 +96,12 @@ export class ModelStateMachine {
             this._state = State.PENDING_SWITCH;
             return true;
         }
-        // 如果已经在 SWITCHED 状态，保持切换状态
+        if (this._state === State.PENDING_RESTORE) {
+            // 等待恢复期间再次检测到 NSFW → 取消恢复，保持已切换
+            this._state = State.SWITCHED;
+            return true;
+        }
+        // 已切换状态或待切换状态：保持不变
         return false;
     }
 
@@ -99,6 +114,11 @@ export class ModelStateMachine {
             this._state = State.PENDING_RESTORE;
             return true;
         }
+        if (this._state === State.PENDING_SWITCH) {
+            // 等待切换期间检测到正常内容 → 取消切换
+            this._state = State.IDLE;
+            return true;
+        }
         return false;
     }
 
@@ -107,7 +127,6 @@ export class ModelStateMachine {
      * @returns {boolean} 是否需要恢复
      */
     onDetectionFailed() {
-        // 如果已切换但检测失败，保守地等待恢复
         if (this._state === State.SWITCHED) {
             this._state = State.PENDING_RESTORE;
             return true;
@@ -116,19 +135,36 @@ export class ModelStateMachine {
     }
 
     /**
-     * 生成开始：如果待切换则切换到已切换
-     * @returns {'switch'|'restore'|'none'} 需要执行的动作
+     * 切换操作成功执行后确认转换
+     * @returns {boolean}
      */
-    onGenerationStarted() {
+    onSwitchApplied() {
         if (this._state === State.PENDING_SWITCH) {
             this._state = State.SWITCHED;
-            return 'switch';
+            return true;
         }
+        return false;
+    }
+
+    /**
+     * 恢复操作成功执行后确认转换
+     * @returns {boolean}
+     */
+    onRestoreApplied() {
         if (this._state === State.PENDING_RESTORE) {
             this._state = State.IDLE;
-            return 'restore';
+            return true;
         }
-        return 'none';
+        return false;
+    }
+
+    /**
+     * 操作失败时回退到空闲状态
+     */
+    onOperationAborted() {
+        if (this._state === State.PENDING_SWITCH || this._state === State.PENDING_RESTORE) {
+            this._state = State.IDLE;
+        }
     }
 
     /**

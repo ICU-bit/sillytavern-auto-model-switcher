@@ -1,35 +1,24 @@
 # 待开发功能
 
-## B 方案：插件独立调用 API（不依赖 oai_settings）
+## B 方案：插件独立调用 API（不依赖 oai_settings）✅ 已实现
 
-### 目标
-插件完全不碰酒馆的 `oai_settings`，完全靠自己发送 HTTP 请求调用目标模型 API，将返回结果插入聊天记录。
+### 状态
+✅ 已完成 — 见 `src/direct-api.js`
+
+### 实现方案
+在 `window.fetch` 层面拦截 ST 发往自己服务端的 API 请求（`/api/backends/chat-completions/generate`），
+直接调用目标模型的 API，将响应返回给 ST 处理。完全绕过 ST 的设置系统，不再修改 oai_settings。
 
 ### 优点
 - 完全不影响酒馆本身的配置
 - 不需要快照/恢复机制
 - 支持任意 API 来源，不受 `chat_completion_source` 约束
-- NSFW 模型可以用完全不同的 API 协议
+- 失败时自动回退到原始请求（安全降级）
+- 支持流式/非流式响应
 
-### 需要实现
-1. **独立 API 调用模块**
-   - 在 `src/` 下新增 `api-client.js`
-   - 支持 OpenAI 兼容协议（流式/非流式）
-   - 支持自定义请求头、温度等参数
-
-2. **消息历史拼接**
-   - 自己从 `getContext().chat` 读取聊天历史
-   - 按 OpenAI 格式组装 messages 数组
-   - 支持 system prompt、instruct 模板等
-
-3. **回复注入**
-   - 调用 API 后直接将回复写入聊天记录
-   - 触发 UI 刷新显示新消息
-   - 处理流式输出的渐进式渲染
-
-4. **配置面板增强**
-   - 新增"独立调用模式"开关
-   - 新增更多 API 参数配置（temperature、max_tokens 等）
-
-### 状态
-⏳ 未开始
+### 核心模块
+- `src/direct-api.js` — fetch 拦截器 + 直调 API
+  - `initFetchInterceptor()`: 替换 `window.fetch`，保存原函数
+  - `redirectToTarget()`: 提取消息 → 直调目标 API → 返回 Response
+  - 15 秒超时 + ST abort signal 联动
+  - 失败时 toastr 通知 + `originalFetch` 回退

@@ -62,6 +62,7 @@ const SOURCE_TO_API_URL_FIELD = {
 const SUPPORTED_SOURCES = Object.keys(SOURCE_TO_FIELD);
 
 let settingsSnapshot = null;
+let lastSwitchTargetSource = null;
 
 function takeSnapshot() {
     if (!oai_settings) {
@@ -169,6 +170,11 @@ function restorePresets() {
     }
 }
 
+/**
+ * @deprecated Plan B (fetch 拦截) 已取代此函数。
+ * 保留用于手动恢复按钮的兜底调用，以及向后兼容。
+ * 主要切换逻辑见 src/direct-api.js。
+ */
 export async function switchToModel(targetModel, targetSource, targetApiUrl, targetApiKey) {
     if (!targetModel) {
         addLog('未指定切换模型', 'warning');
@@ -197,6 +203,9 @@ export async function switchToModel(targetModel, targetSource, targetApiUrl, tar
         }
 
         addLog('切换模型到: ' + targetModel + ' (来源: ' + targetSource_ + ')', 'success');
+
+        // 记录目标来源，恢复时用于清理残留字段
+        lastSwitchTargetSource = targetSource_;
 
         // 切换 API 来源
         if (targetSource_ !== oai_settings.chat_completion_source) {
@@ -286,6 +295,16 @@ export async function restoreOriginalModel() {
 
         restorePresets();
 
+        // 清理目标来源的残留字段（避免跨源泄漏）
+        if (lastSwitchTargetSource && lastSwitchTargetSource !== source) {
+            const staleUrlField = SOURCE_TO_API_URL_FIELD[lastSwitchTargetSource];
+            if (staleUrlField && oai_settings[staleUrlField] !== undefined) {
+                oai_settings[staleUrlField] = undefined;
+            }
+            oai_settings[lastSwitchTargetSource + '_api_key'] = undefined;
+        }
+        lastSwitchTargetSource = null;
+
         const restoredModel = field ? oai_settings[field] : '未知';
         addLog('已恢复原模型: ' + (restoredModel || '默认模型'), 'success');
 
@@ -313,6 +332,7 @@ export function hasSettingsSnapshot() {
 
 export function clearSettingsSnapshot() {
     settingsSnapshot = null;
+    lastSwitchTargetSource = null;
     addLog('快照已清除', 'info');
 }
 

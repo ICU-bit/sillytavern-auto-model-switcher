@@ -37,9 +37,10 @@ function normalizeApiUrl(url) {
 /**
  * 检测文本是否为 NSFW
  * @param {string} content - 要检测的文本内容
+ * @param {AbortSignal} [externalSignal] - 外部取消信号（用于swipe时取消前一次检测）
  * @returns {Promise<boolean|null>} true=NSFW, false=正常, null=检测失败
  */
-export async function detectNSFW(content) {
+export async function detectNSFW(content, externalSignal) {
     const settings = loadSettings();
     const { nsfwApiUrl, nsfwApiKey, nsfwModelName, debugMode } = settings;
 
@@ -59,6 +60,14 @@ export async function detectNSFW(content) {
 
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+        // 如果外部要求取消（用户swipe），同步取消本次检测
+        if (externalSignal) {
+            externalSignal.addEventListener('abort', () => {
+                clearTimeout(timeoutId);
+                controller.abort();
+            }, { once: true });
+        }
 
         const apiUrl = normalizeApiUrl(nsfwApiUrl);
 
@@ -101,7 +110,7 @@ export async function detectNSFW(content) {
         return null;
     } catch (error) {
         if (error.name === 'AbortError') {
-            addLog('检测请求超时', 'error');
+            addLog('检测请求超时或取消', 'error');
         } else {
             addLog('检测失败: ' + error.message, 'error');
         }
