@@ -37,6 +37,7 @@ export const DEFAULT_SETTINGS = {
     modelA: '',
     modelAApiUrl: '',
     modelAApiKey: '',
+    nsfwPresetData: null,
     showNotification: true,
     debugMode: false,
 };
@@ -69,6 +70,7 @@ export function collectAndSaveFromDom($formContainer) {
         modelA: $formContainer.find('#nsfw_switcher_model_a').val(),
         modelAApiUrl: $formContainer.find('#nsfw_switcher_model_a_api_url').val(),
         modelAApiKey: $formContainer.find('#nsfw_switcher_model_a_api_key').val(),
+        nsfwPresetData: extension_settings[EXTENSION_NAME]?.nsfwPresetData || null,
         showNotification: $formContainer.find('#nsfw_switcher_show_notification').prop('checked'),
         debugMode: $formContainer.find('#nsfw_switcher_debug_mode').prop('checked'),
     };
@@ -88,6 +90,7 @@ export function applySettingsToDom(settings, $formContainer) {
     $formContainer.find('#nsfw_switcher_model_a').val(settings.modelA);
     $formContainer.find('#nsfw_switcher_model_a_api_url').val(settings.modelAApiUrl);
     $formContainer.find('#nsfw_switcher_model_a_api_key').val(settings.modelAApiKey);
+    // nsfwPresetData 通过按钮交互设置，不通过 DOM 表单同步
     $formContainer.find('#nsfw_switcher_show_notification').prop('checked', settings.showNotification);
     $formContainer.find('#nsfw_switcher_debug_mode').prop('checked', settings.debugMode);
 }

@@ -39,6 +39,8 @@ const ST_API_PATTERNS = [
 
 let originalFetch = null;
 let interceptEnabled = false;
+let onRequestRedirected = null;
+let presetOverrides = null;
 
 /**
  * 初始化 fetch 拦截器（在插件加载时调用一次）
@@ -96,6 +98,23 @@ export function setInterceptEnabled(enabled) {
 
 export function isInterceptEnabled() {
     return interceptEnabled;
+}
+
+export function setOnRequestRedirected(callback) {
+    onRequestRedirected = callback;
+}
+
+export function setPresetOverrides(params) {
+    presetOverrides = params;
+}
+
+function applyPresetToBody(directBody) {
+    if (!presetOverrides) return;
+    for (const [key, value] of Object.entries(presetOverrides)) {
+        if (value !== undefined) {
+            directBody[key] = value;
+        }
+    }
 }
 
 /**
@@ -166,11 +185,19 @@ async function redirectToTarget(originalBody, originalOptions) {
         }
     }
 
+    // NSFW 预设覆盖（如果有导入预设，用预设的生成参数覆盖透传值）
+    applyPresetToBody(directBody);
+
     const headers = {
         'Content-Type': 'application/json',
     };
     if (targetApiKey) {
         headers['Authorization'] = 'Bearer ' + targetApiKey;
+    }
+
+    // ST 已格式化完毕，请求被接管 → 立即恢复原始预设
+    if (onRequestRedirected) {
+        onRequestRedirected();
     }
 
     // 15秒超时，防止目标API过慢导致用户长时间等待
