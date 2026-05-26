@@ -60,7 +60,7 @@ git clone https://github.com/ICU-bit/sillytavern-auto-model-switcher.git
 # 推荐：在仓库目录和安装目录之间建立链接
 # 这样在仓库中修改代码，安装目录自动同步
 # Windows (管理员 PowerShell)：
-cmd /c mklink /D "E:\ST\projects\SillyTavern\public\scripts\extensions\third-party\sillytavern-auto-model-switcher" "E:\ST\projects\酒馆热插拔模型\sillytavern-auto-model-switcher"
+cmd /c mklink /D "C:\path\to\SillyTavern\public\scripts\extensions\third-party\sillytavern-auto-model-switcher" "C:\path\to\repo\sillytavern-auto-model-switcher"
 ```
 
 ### 1.4 开发工作流
