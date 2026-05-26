@@ -35,6 +35,9 @@
  *     → 失败 → toastr 通知 → 回退原始请求
  */
 
+// 模块加载确认（必须在最顶部）
+console.log('NSFW_MODULE_LOADED');
+
 import { eventSource, event_types } from '../../../../script.js';
 import { extension_settings } from '../../../extensions.js';
 import { addLog, clearLogs, setRenderCallback, renderLogsHtml, getLogs } from './src/logger.js';
@@ -421,32 +424,26 @@ function setupLogRendering() {
 
 // ── 初始化入口 ────────────────────────────────────────
 
-jQuery(async () => {
+$(() => {
     extension_settings[EXTENSION_NAME] = { ...DEFAULT_SETTINGS, ...extension_settings[EXTENSION_NAME] };
 
-    addLog('插件正在激活...', 'info');
-
-    // Plan B: 初始化 fetch 拦截器，在 API 请求层面重定向
+    // Plan B: fetch 拦截器
     initFetchInterceptor();
-    addLog('fetch 拦截器已初始化', 'info');
 
     setupLogRendering();
 
-    const $panel = initSettingsPanel();
-    if ($panel) {
-        bindSettingsListeners($panel);
-    }
+    // 注入设置面板
+    const $panel = $('<div id="nsfw_switcher_panel">' + createSettingsHtml() + '</div>').appendTo('#extensions_settings');
 
+    bindSettingsListeners($panel);
     registerEventListeners();
 
-    if (!isReady && extension_settings[EXTENSION_NAME]) {
+    if (extension_settings[EXTENSION_NAME]) {
         onSettingsLoaded();
     }
-
-    addLog('插件加载完成！', 'success');
 });
 
-// ── 调试诊断（在浏览器控制台输入 __nsfwDebug() 即可导出） ────────
+// ── 调试诊断 ────────────────────────────────────────
 
 window.__nsfwDebug = function () {
     const s = loadSettings();
