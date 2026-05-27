@@ -41,7 +41,7 @@ export const DEFAULT_SETTINGS = {
     nsfwPresetData: null,
     showNotification: true,
     debugMode: false,
-    debugLevel: 'info',  // 'debug' | 'info' | 'warn' | 'error'
+    debugLevel: 'error',  // 'debug' | 'info' | 'warn' | 'error'
 };
 
 /**
