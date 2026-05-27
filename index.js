@@ -3,7 +3,7 @@ console.log('NSFW_MODULE_LOADED');
 import { eventSource, event_types } from '../../../../script.js';
 import { extension_settings } from '../../../extensions.js';
 import { power_user } from '../../../../scripts/power-user.js';
-import { addLog, clearLogs, setRenderCallback, renderLogsHtml, getLogs } from './src/logger.js';
+import { addLog, addDebugLog, clearLogs, setRenderCallback, renderLogsHtml, getLogs, copyLogsToClipboard, exportLogsAsJson, initLogs } from './src/logger.js';
 import { EXTENSION_NAME, DEFAULT_SETTINGS, loadSettings, collectAndSaveFromDom, applySettingsToDom, updateStatusIndicator } from './src/settings.js';
 import { createStateMachine } from './src/state.js';
 import { saveSettingsDebounced } from '../../../../script.js';
@@ -12,23 +12,20 @@ import { restoreOriginalModel, saveSettingsSnapshot, clearSettingsSnapshot } fro
 import { initFetchInterceptor, setInterceptEnabled, isInterceptEnabled, setOnRequestRedirected, setPresetOverrides } from './src/direct-api.js';
 
 console.log('ALL_IMPORTS_OK');
+addLog('所有模块导入成功', 'info', 'debug');
 
 var state, isReady, currentDetectionId, detectionAbortController;
 var originalPresets = null;
 
 var PRESET_MODULES = [
     { id: 'genParams', name: '生成参数', fields: ['temperature', 'top_p', 'top_k', 'top_a', 'min_p', 'repetition_penalty', 'frequency_penalty', 'presence_penalty', 'openai_max_context', 'openai_max_tokens'], test: function(p) { return ['temperature', 'top_p', 'top_k', 'repetition_penalty'].some(function(k) { return p[k] !== undefined; }); } },
-    { id: 'instruct', name: 'Instruct 模板', fields: ['input_sequence', 'output_sequence', 'system_sequence', 'stop_sequence', 'wrap', 'names_behavior', 'activation_regex', 'output_suffix', 'input_suffix', 'system_suffix', 'first_output_sequence', 'last_output_sequence', 'system_same_as_user', 'sequences_as_stop_strings', 'skip_examples'], test: function(p) { return p.input_sequence !== undefined; } },
+    { id: 'instruct', name: 'Instruct 模板', fields: ['input_sequence', 'output_sequence', 'system_sequence', 'stop_sequence', 'wrap', 'names_behavior', 'activation_regex', 'output_suffix', 'input_suffix', 'system_suffix', 'first_output_sequence', 'last_output_sequence', 'system_same_as_user', 'sequences_as_stop_strings', 'skip_examples', 'macro', 'user_alignment_message', 'last_system_sequence', 'first_input_sequence', 'last_input_sequence', 'story_string_prefix', 'story_string_suffix'], test: function(p) { return p.input_sequence !== undefined; } },
     { id: 'context', name: 'Context 模板', fields: ['story_string', 'chat_start', 'example_separator', 'use_stop_strings', 'names_as_stop_strings', 'story_string_position', 'story_string_depth', 'story_string_role', 'always_force_name2', 'trim_sentences', 'single_line'], test: function(p) { return p.story_string !== undefined; } },
     { id: 'sysprompt', name: 'System Prompt', fields: ['content', 'post_history'], test: function(p) { return p.content !== undefined && p.name !== undefined; } },
     { id: 'reasoning', name: 'Reasoning 格式', fields: ['prefix', 'suffix', 'separator'], test: function(p) { return p.prefix !== undefined && p.suffix !== undefined; } },
     { id: 'prompts', name: '自定义提示词', fields: [], test: function(p) { return Array.isArray(p.prompts) && p.prompts.length > 0; } },
 ];
 
-function detectPresetModules(preset) {
-    if (!preset) return [];
-    return PRESET_MODULES.filter(function(m) { return m.test(preset); });
-}
 
 /** 从预设中提取生成参数 */
 function extractGenParams(preset) {
@@ -50,21 +47,86 @@ function saveOriginalPresets() {
         sysprompt: structuredClone(power_user.sysprompt),
         reasoning: structuredClone(power_user.reasoning),
     };
+    addDebugLog('已保存原始预设快照');
+}
+
+function flattenMasterPreset(preset) {
+    if (preset.instruct || preset.context || preset.sysprompt || preset.reasoning) {
+        var flat = {};
+        if (preset.instruct) Object.assign(flat, preset.instruct);
+        if (preset.context) Object.assign(flat, preset.context);
+        if (preset.sysprompt) Object.assign(flat, preset.sysprompt);
+        if (preset.reasoning) Object.assign(flat, preset.reasoning);
+        if (preset.preset) Object.assign(flat, preset.preset);
+        return flat;
+    }
+    return preset;
 }
 
 function applyNsfwPresets(preset) {
     if (!preset) return;
     saveOriginalPresets();
-    if (preset.names_behavior !== undefined) {
-        power_user.instruct.names_behavior = typeof preset.names_behavior === 'number'
-            ? (['none', 'force', 'always'])[preset.names_behavior] || 'force'
-            : preset.names_behavior;
+    preset = flattenMasterPreset(preset);
+
+    var mods = extension_settings[EXTENSION_NAME].nsfwPresetModules || {};
+
+    if (mods.instruct !== false) {
+        var instructFields = PRESET_MODULES.find(function(m) { return m.id === 'instruct'; }).fields;
+        for (var i = 0; i < instructFields.length; i++) {
+            var key = instructFields[i];
+            if (preset[key] !== undefined && mods['instruct_' + key] !== false) {
+                power_user.instruct[key] = preset[key];
+            }
+        }
+        if (preset.names_behavior !== undefined && mods['instruct_names_behavior'] !== false) {
+            power_user.instruct.names_behavior = typeof preset.names_behavior === 'number'
+                ? (['none', 'force', 'always'])[preset.names_behavior] || 'force'
+                : preset.names_behavior;
+        }
+        if (preset.wrap_in_quotes !== undefined && mods['instruct_wrap'] !== false) {
+            power_user.instruct.wrap = preset.wrap_in_quotes;
+        }
     }
-    if (preset.wrap_in_quotes !== undefined) power_user.instruct.wrap = preset.wrap_in_quotes;
-    if (preset.input_sequence !== undefined) Object.assign(power_user.instruct, preset);
-    if (preset.story_string !== undefined) Object.assign(power_user.context, preset);
-    if (preset.content !== undefined && preset.name !== undefined) Object.assign(power_user.sysprompt, preset);
-    if (preset.prefix !== undefined && preset.suffix !== undefined) Object.assign(power_user.reasoning, preset);
+
+    if (mods.context !== false) {
+        var contextModule = PRESET_MODULES.find(function(m) { return m.id === 'context'; });
+        for (var i = 0; i < contextModule.fields.length; i++) {
+            var key = contextModule.fields[i];
+            if (preset[key] !== undefined && mods['context_' + key] !== false) {
+                if (['always_force_name2', 'trim_sentences', 'single_line'].indexOf(key) !== -1) {
+                    power_user[key] = preset[key];
+                } else {
+                    power_user.context[key] = preset[key];
+                }
+            }
+        }
+    }
+
+    if (mods.sysprompt !== false) {
+        var syspromptFields = PRESET_MODULES.find(function(m) { return m.id === 'sysprompt'; }).fields;
+        for (var i = 0; i < syspromptFields.length; i++) {
+            var key = syspromptFields[i];
+            if (preset[key] !== undefined && mods['sysprompt_' + key] !== false) {
+                power_user.sysprompt[key] = preset[key];
+            }
+        }
+    }
+
+    if (mods.reasoning !== false) {
+        var reasoningFields = PRESET_MODULES.find(function(m) { return m.id === 'reasoning'; }).fields;
+        for (var i = 0; i < reasoningFields.length; i++) {
+            var key = reasoningFields[i];
+            if (preset[key] !== undefined && mods['reasoning_' + key] !== false) {
+                power_user.reasoning[key] = preset[key];
+            }
+        }
+    }
+
+    if (mods.prompts !== false && Array.isArray(preset.prompts)) {
+        addLog('检测到自定义提示词 (' + preset.prompts.length + ' 个)，已跳过', 'info');
+    }
+
+    addLog('已应用 NSFW 预设: ' + (preset.name || preset.display_name || '未命名'), 'info');
 }
 
 function escapeHtml(str) {
@@ -126,7 +188,9 @@ function buildDefaultEnabledModules(preset) {
             for (var pi = 0; pi < preset.prompts.length; pi++) enabled['prompt_' + pi] = true;
         } else if (m.fields) {
             for (var fi = 0; fi < m.fields.length; fi++) {
-                if (preset[m.fields[fi]] !== undefined) enabled[m.id + '_' + m.fields[fi]] = true;
+                if (['always_force_name2', 'trim_sentences', 'single_line'].indexOf(m.fields[fi]) !== -1) {
+                    if (preset[m.fields[fi]] !== undefined) enabled[m.id + '_' + m.fields[fi]] = true;
+                } else if (preset[m.fields[fi]] !== undefined) enabled[m.id + '_' + m.fields[fi]] = true;
             }
         }
     }
@@ -140,6 +204,7 @@ function restoreOriginalPresets() {
     if (originalPresets.sysprompt) Object.assign(power_user.sysprompt, originalPresets.sysprompt);
     if (originalPresets.reasoning) Object.assign(power_user.reasoning, originalPresets.reasoning);
     originalPresets = null;
+    addLog('已恢复原始预设', 'info');
 }
 
 function createSettingsHtml() {
@@ -154,16 +219,17 @@ function createSettingsHtml() {
         '<div style="margin-bottom: 12px;"><label style="display: block; font-weight: 500; color: #555; margin-bottom: 5px; font-size: 13px;">目标模型API地址 <span style="color: #e74c3c;">*</span></label><input type="text" id="nsfw_switcher_model_a_api_url" style="width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; box-sizing: border-box;" placeholder="https://api.example.com/v1/chat/completions"></div>' +
         '<div style="margin-bottom: 12px;"><label style="display: block; font-weight: 500; color: #555; margin-bottom: 5px; font-size: 13px;">目标模型API密钥</label><input type="password" id="nsfw_switcher_model_a_api_key" style="width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; box-sizing: border-box;" placeholder="sk-... (可选)"></div>' +
         '<div style="margin-bottom: 12px;"><label style="display: flex; align-items: center; gap: 8px; cursor: pointer;"><input type="checkbox" id="nsfw_switcher_show_notification" checked><span style="font-size: 13px;">显示切换通知</span></label></div>' +
-        '<div style="margin-bottom: 12px;"><label style="display: flex; align-items: center; gap: 8px; cursor: pointer;"><input type="checkbox" id="nsfw_switcher_debug_mode"><span style="font-size: 13px;">调试模式（显示详细日志）</span></label></div></div>' +
+        '<div style="margin-bottom: 12px;"><label style="display: flex; align-items: center; gap: 8px; cursor: pointer;"><input type="checkbox" id="nsfw_switcher_debug_mode"><span style="font-size: 13px;">调试模式（显示详细日志）</span></label></div><div style="margin-bottom: 12px;"><label style="display: block; font-weight: 500; color: #555; margin-bottom: 5px; font-size: 13px;">日志级别</label><select id="nsfw_switcher_debug_level" style="width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; box-sizing: border-box;"><option value="debug">Debug（详细调试）</option><option value="info" selected>Info（一般信息）</option><option value="warn">Warn（警告）</option><option value="error">Error（仅错误）</option></select></div></div>' +
         '<div style="margin-bottom: 15px; padding: 12px; background: #f8f9fa; border-radius: 4px;"><div style="font-weight: 600; color: #333; margin-bottom: 10px;"><i class="fa-solid fa-file-import" style="margin-right: 8px;"></i>NSFW 预设（导入酒馆预设文件）</div><div style="margin-bottom: 8px; font-size: 12px; color: #666;">导入一个酒馆预设文件（OpenAI Settings / Instruct / Context / Sysprompt / Reasoning），切换 NSFW 模型时自动应用。</div><div style="display: flex; gap: 8px; align-items: center;"><button id="nsfw_switcher_import_preset_btn" style="flex: 1; padding: 8px 12px; border: none; border-radius: 4px; font-size: 12px; font-weight: 500; cursor: pointer; background: #667eea; color: white;"><i class="fa-solid fa-upload"></i> 导入预设</button><button id="nsfw_switcher_remove_preset_btn" style="padding: 8px 12px; border: none; border-radius: 4px; font-size: 12px; cursor: pointer; background: #e74c3c; color: white;"><i class="fa-solid fa-trash"></i> 移除</button></div><div id="nsfw_switcher_preset_status" style="margin-top: 8px; font-size: 12px; color: #888;">未导入预设</div></div>' +
         '<div style="display: flex; gap: 10px; margin-bottom: 10px;"><button id="nsfw_switcher_test_btn" style="flex: 1; padding: 8px 12px; border: none; border-radius: 4px; font-size: 12px; font-weight: 500; cursor: pointer; background: #667eea; color: white;"><i class="fa-solid fa-play"></i> 测试API</button><button id="nsfw_switcher_restore_btn" style="flex: 1; padding: 8px 12px; border: none; border-radius: 4px; font-size: 12px; font-weight: 500; cursor: pointer; background: #e0e0e0; color: #555;"><i class="fa-solid fa-rotate-left"></i> 恢复原模型</button></div>' +
-        '<div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #eee;"><div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;"><div style="font-weight: 600; color: #333;"><i class="fa-solid fa-scroll" style="margin-right: 8px;"></i>运行日志</div><button id="nsfw_switcher_clear_logs_btn" style="padding: 4px 8px; border: none; border-radius: 3px; font-size: 11px; cursor: pointer; background: #f5f5f5; color: #666;"><i class="fa-solid fa-trash"></i> 清空</button></div><div id="nsfw_switcher_logs" style="max-height: 200px; overflow-y: auto; background: #fafafa; border-radius: 4px; padding: 10px; font-family: monospace;"><div style="color: #999; font-size: 12px; text-align: center;">暂无日志</div></div></div></div></div>';
+        '<div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #eee;"><div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;"><div style="font-weight: 600; color: #333;"><i class="fa-solid fa-scroll" style="margin-right: 8px;"></i>运行日志</div><div style="display: flex; gap: 6px; align-items: center;"><select id="nsfw_switcher_log_level_filter" style="padding: 2px 4px; border: 1px solid #ddd; border-radius: 3px; font-size: 11px; background: #f5f5f5; color: #666;"><option value="debug">全部</option><option value="info">Info+</option><option value="warn">Warn+</option><option value="error">仅Error</option></select><button id="nsfw_switcher_clear_logs_btn" style="padding: 4px 8px; border: none; border-radius: 3px; font-size: 11px; cursor: pointer; background: #f5f5f5; color: #666;"><i class="fa-solid fa-trash"></i> 清空</button><button id="nsfw_switcher_copy_logs_btn" style="padding: 4px 8px; border: none; border-radius: 3px; font-size: 11px; cursor: pointer; background: #f5f5f5; color: #666;"><i class="fa-solid fa-copy"></i> 复制</button><button id="nsfw_switcher_export_logs_btn" style="padding: 4px 8px; border: none; border-radius: 3px; font-size: 11px; cursor: pointer; background: #f5f5f5; color: #666;"><i class="fa-solid fa-download"></i> 导出</button></div></div><div id="nsfw_switcher_logs" style="max-height: 200px; overflow-y: auto; background: #fafafa; border-radius: 4px; padding: 10px; font-family: monospace;"><div style="color: #999; font-size: 12px; text-align: center;">暂无日志</div></div></div></div></div>';
 }
 
 function setupLogRendering() {
     setRenderCallback(function (logs) {
+        var minLevel = (extension_settings[EXTENSION_NAME] && extension_settings[EXTENSION_NAME].debugLevel) || 'debug';
         var $c = $('#nsfw_switcher_logs');
-        if ($c.length) $c.html(renderLogsHtml(logs));
+        if ($c.length) $c.html(renderLogsHtml(logs, minLevel));
     });
 }
 
@@ -172,7 +238,7 @@ function bindSettingsListeners($panel) {
         '#nsfw_switcher_enabled, #nsfw_switcher_api_url, #nsfw_switcher_api_key, ' +
         '#nsfw_switcher_model_name, #nsfw_switcher_model_a, #nsfw_switcher_model_a_api_url, ' +
         '#nsfw_switcher_model_a_api_key, ' +
-        '#nsfw_switcher_show_notification, #nsfw_switcher_debug_mode',
+        '#nsfw_switcher_show_notification, #nsfw_switcher_debug_mode, #nsfw_switcher_debug_level',
         function () {
             collectAndSaveFromDom($panel);
             var s = loadSettings();
@@ -194,6 +260,22 @@ function bindSettingsListeners($panel) {
     $panel.on('click', '#nsfw_switcher_clear_logs_btn', function () {
         clearLogs();
         addLog('日志已清空', 'info');
+    });
+    $panel.on('click', '#nsfw_switcher_copy_logs_btn', async function () {
+        await copyLogsToClipboard('text');
+    });
+    $panel.on('click', '#nsfw_switcher_export_logs_btn', function () {
+        var jsonStr = exportLogsAsJson();
+        var blob = new Blob([jsonStr], { type: 'application/json' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = 'nsfw-switcher-logs-' + new Date().toISOString().replace(/[:.]/g, '-') + '.json';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        addLog('日志已导出为JSON文件', 'success');
     });
 
     var $fileInput = $('<input type="file" accept=".json" style="display:none">');
@@ -251,6 +333,12 @@ function bindSettingsListeners($panel) {
         mods[fid] = checked;
         extension_settings[EXTENSION_NAME].nsfwPresetModules = mods;
         saveSettingsDebounced();
+    });
+    $panel.on('change', '#nsfw_switcher_log_level_filter', function () {
+        var minLevel = $(this).val();
+        var logs = getLogs();
+        var $c = $panel.find('#nsfw_switcher_logs');
+        if ($c.length) $c.html(renderLogsHtml(logs, minLevel));
     });
     // 点击字段行展开编辑器
     $panel.on('click', '.nsfw-field-row', function (e) {
@@ -322,17 +410,17 @@ async function onMessageRendered(messageId, type) {
     var thisDetectionId = ++currentDetectionId;
     var content = getMessageTextById(messageId) || getLastAiMessageText();
     if (!content) {
-        if (settings.debugMode) addLog('未找到 AI 消息内容', 'info');
+        if (settings.debugMode) addDebugLog('未找到 AI 消息内容');
         return;
     }
-    if (settings.debugMode) addLog('检测 AI 回复中... (长度: ' + content.length + ' 字)', 'info');
+    if (settings.debugMode) addDebugLog('检测 AI 回复中... (长度: ' + content.length + ' 字)');
     var nsfwResult = await detectNSFW(content, detectionAbortController.signal);
     if (thisDetectionId !== currentDetectionId) return;
     if (nsfwResult === true) {
         if (state.onNsfwDetected()) { addLog('检测结果: NSFW → 下次生成将切换模型', 'warning'); saveSettingsSnapshot(); }
     } else if (nsfwResult === false) {
         if (state.onCleanDetected()) addLog('检测结果: 正常 → 下次生成将恢复原模型', 'info');
-        else if (settings.debugMode) addLog('检测结果: 正常，保持当前模型', 'info');
+        else if (settings.debugMode) addDebugLog('检测结果: 正常，保持当前模型');
     } else {
         if (state.onDetectionFailed()) addLog('检测失败 → 下次生成将恢复原模型', 'warning');
     }
@@ -349,7 +437,13 @@ async function onGenerationStarted(type, params, dryRun) {
         addLog('生成开始 → 启用拦截（上次回复为 NSFW）', 'info');
         if (settings.nsfwPresetData) {
             applyNsfwPresets(settings.nsfwPresetData);
-            setPresetOverrides(extractGenParams(settings.nsfwPresetData));
+            var genParams = extractGenParams(settings.nsfwPresetData);
+            if (genParams) {
+                Object.keys(genParams).forEach(function(key) {
+                    if (key !== 'stream_openai') power_user[key] = genParams[key];
+                });
+            }
+            setPresetOverrides(genParams);
         }
         setInterceptEnabled(true);
         state.onSwitchApplied();
@@ -359,7 +453,7 @@ async function onGenerationStarted(type, params, dryRun) {
         restoreOriginalPresets();
         setPresetOverrides(null);
     } else {
-        if (settings.debugMode) addLog('生成开始 → 无需操作', 'info');
+        if (settings.debugMode) addDebugLog('生成开始 → 无需操作');
     }
     var $c = $('#nsfw_switcher_state_text');
     if ($c.length) $c.text('状态机: ' + state.getStateDescription() + (isInterceptEnabled() ? ' [拦截中]' : ''));
@@ -387,6 +481,9 @@ function onSettingsLoaded() {
 
 $(() => {
     console.log('JQUERY_READY');
+    setupLogRendering();
+    initLogs();
+    addLog('jQuery 就绪', 'info', 'debug');
     extension_settings[EXTENSION_NAME] = { ...DEFAULT_SETTINGS, ...extension_settings[EXTENSION_NAME] };
 
     state = createStateMachine();
@@ -397,7 +494,6 @@ $(() => {
     initFetchInterceptor();
     setOnRequestRedirected(function () { restoreOriginalPresets(); });
 
-    setupLogRendering();
 
     var $panel = $('<div id="nsfw_switcher_panel">' + createSettingsHtml() + '</div>').appendTo('#extensions_settings');
     bindSettingsListeners($panel);
@@ -406,6 +502,7 @@ $(() => {
     if (extension_settings[EXTENSION_NAME]) onSettingsLoaded();
 
     console.log('INIT_COMPLETE');
+    addLog('初始化完成', 'success');
 });
 
 window.__nsfwDebug = function () {

@@ -1,3 +1,4 @@
+import { addStateTransitionLog } from './logger.js';
 /**
  * NSFW 模型切换器 (SillyTavern Auto Model Switcher)
  * Copyright (C) 2025 ICU-bit
@@ -40,6 +41,7 @@ export const State = Object.freeze({
     /** 待恢复：下一次生成时恢复原模型 */
     PENDING_RESTORE: 'pending_restore',
 });
+
 
 export class ModelStateMachine {
     constructor() {
@@ -93,12 +95,15 @@ export class ModelStateMachine {
      */
     onNsfwDetected() {
         if (this._state === State.IDLE) {
+            const oldState = this._state;
             this._state = State.PENDING_SWITCH;
+            addStateTransitionLog(oldState, this._state, '检测到NSFW内容');
             return true;
         }
         if (this._state === State.PENDING_RESTORE) {
-            // 等待恢复期间再次检测到 NSFW → 取消恢复，保持已切换
+            const oldState = this._state;
             this._state = State.SWITCHED;
+            addStateTransitionLog(oldState, this._state, '恢复期间再次检测到NSFW，取消恢复');
             return true;
         }
         // 已切换状态或待切换状态：保持不变
@@ -111,12 +116,15 @@ export class ModelStateMachine {
      */
     onCleanDetected() {
         if (this._state === State.SWITCHED || this._state === State.PENDING_RESTORE) {
+            const oldState = this._state;
             this._state = State.PENDING_RESTORE;
+            addStateTransitionLog(oldState, this._state, '检测到正常内容，准备恢复');
             return true;
         }
         if (this._state === State.PENDING_SWITCH) {
-            // 等待切换期间检测到正常内容 → 取消切换
+            const oldState = this._state;
             this._state = State.IDLE;
+            addStateTransitionLog(oldState, this._state, '切换期间检测到正常内容，取消切换');
             return true;
         }
         return false;
@@ -128,7 +136,9 @@ export class ModelStateMachine {
      */
     onDetectionFailed() {
         if (this._state === State.SWITCHED) {
+            const oldState = this._state;
             this._state = State.PENDING_RESTORE;
+            addStateTransitionLog(oldState, this._state, '检测失败，准备恢复原模型');
             return true;
         }
         return false;
@@ -140,7 +150,9 @@ export class ModelStateMachine {
      */
     onSwitchApplied() {
         if (this._state === State.PENDING_SWITCH) {
+            const oldState = this._state;
             this._state = State.SWITCHED;
+            addStateTransitionLog(oldState, this._state, '切换操作已执行');
             return true;
         }
         return false;
@@ -152,7 +164,9 @@ export class ModelStateMachine {
      */
     onRestoreApplied() {
         if (this._state === State.PENDING_RESTORE) {
+            const oldState = this._state;
             this._state = State.IDLE;
+            addStateTransitionLog(oldState, this._state, '恢复操作已执行');
             return true;
         }
         return false;
@@ -163,7 +177,9 @@ export class ModelStateMachine {
      */
     onOperationAborted() {
         if (this._state === State.PENDING_SWITCH || this._state === State.PENDING_RESTORE) {
+            const oldState = this._state;
             this._state = State.IDLE;
+            addStateTransitionLog(oldState, this._state, '操作失败，回退到空闲');
         }
     }
 
@@ -171,7 +187,9 @@ export class ModelStateMachine {
      * 手动恢复了模型 → 回到空闲
      */
     onManualRestore() {
+        const oldState = this._state;
         this._state = State.IDLE;
+        addStateTransitionLog(oldState, this._state, '手动恢复');
     }
 
     /**

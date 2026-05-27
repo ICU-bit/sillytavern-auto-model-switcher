@@ -23,6 +23,7 @@
 
 import { extension_settings } from '../../../../extensions.js';
 import { saveSettingsDebounced } from '../../../../../script.js';
+import { addLog, addDebugLog } from './logger.js';
 
 export const EXTENSION_NAME = 'nsfw-model-switcher';
 
@@ -40,6 +41,7 @@ export const DEFAULT_SETTINGS = {
     nsfwPresetData: null,
     showNotification: true,
     debugMode: false,
+    debugLevel: 'info',  // 'debug' | 'info' | 'warn' | 'error'
 };
 
 /**
@@ -51,10 +53,13 @@ export function loadSettings() {
     if (!stored) {
         // 首次运行，用默认值初始化
         extension_settings[EXTENSION_NAME] = { ...DEFAULT_SETTINGS };
+        addDebugLog('设置已加载: enabled=' + extension_settings[EXTENSION_NAME].enabled + ', debugMode=' + extension_settings[EXTENSION_NAME].debugMode);
         return { ...DEFAULT_SETTINGS };
     }
     // 合并默认值，确保新增字段也有默认值
-    return { ...DEFAULT_SETTINGS, ...stored };
+    const merged = { ...DEFAULT_SETTINGS, ...stored };
+    addDebugLog('设置已加载: enabled=' + merged.enabled + ', debugMode=' + merged.debugMode);
+    return merged;
 }
 
 /**
@@ -73,7 +78,9 @@ export function collectAndSaveFromDom($formContainer) {
         nsfwPresetData: extension_settings[EXTENSION_NAME]?.nsfwPresetData || null,
         showNotification: $formContainer.find('#nsfw_switcher_show_notification').prop('checked'),
         debugMode: $formContainer.find('#nsfw_switcher_debug_mode').prop('checked'),
+        debugLevel: $formContainer.find('#nsfw_switcher_debug_level').val() || 'info',
     };
+    addDebugLog('设置已从DOM收集并保存');
     saveSettingsDebounced();
 }
 
@@ -93,6 +100,8 @@ export function applySettingsToDom(settings, $formContainer) {
     // nsfwPresetData 通过按钮交互设置，不通过 DOM 表单同步
     $formContainer.find('#nsfw_switcher_show_notification').prop('checked', settings.showNotification);
     $formContainer.find('#nsfw_switcher_debug_mode').prop('checked', settings.debugMode);
+    $formContainer.find('#nsfw_switcher_debug_level').val(settings.debugLevel || 'info');
+    addDebugLog('设置已应用到DOM');
 }
 
 /**
@@ -107,11 +116,14 @@ export function updateStatusIndicator(settings, $container) {
     if (!settings.enabled) {
         $indicator.css('background', '#e74c3c');
         $text.text('已禁用');
+        addLog('状态指示器更新: 已禁用', 'info');
     } else if (!settings.nsfwApiUrl || !settings.modelA || !settings.modelAApiUrl) {
         $indicator.css('background', '#f39c12');
         $text.text('配置不完整');
+        addLog('状态指示器更新: 配置不完整', 'info');
     } else {
         $indicator.css('background', '#27ae60');
         $text.text('运行中');
+        addLog('状态指示器更新: 运行中', 'info');
     }
 }
