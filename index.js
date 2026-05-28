@@ -10,12 +10,12 @@ import { saveSettingsDebounced } from '../../../../script.js';
 import { detectNSFW, getLastAiMessageText, getMessageTextById, testNsfwApi } from './src/detector.js';
 import { restoreOriginalModel, saveSettingsSnapshot, clearSettingsSnapshot } from './src/model-switcher.js';
 import { initFetchInterceptor, setInterceptEnabled, isInterceptEnabled, setOnRequestRedirected, setPresetOverrides } from './src/direct-api.js';
+import { initProxies, activateOverrides, deactivateOverrides, isOverridesActive } from './src/preset-proxy.js';
 
 console.log('ALL_IMPORTS_OK');
 addLog('所有模块导入成功', 'info', 'debug');
 
 var state, isReady, currentDetectionId, detectionAbortController;
-var originalPresets = null;
 
 var PRESET_MODULES = [
     { id: 'genParams', name: '生成参数', fields: ['temperature', 'top_p', 'top_k', 'top_a', 'min_p', 'repetition_penalty', 'frequency_penalty', 'presence_penalty', 'openai_max_context', 'openai_max_tokens'], test: function(p) { return ['temperature', 'top_p', 'top_k', 'repetition_penalty'].some(function(k) { return p[k] !== undefined; }); } },
@@ -37,96 +37,6 @@ function extractGenParams(preset) {
         if (preset[key] !== undefined) params[key] = preset[key];
     }
     return Object.keys(params).length ? params : null;
-}
-
-function saveOriginalPresets() {
-    if (originalPresets) return;
-    originalPresets = {
-        instruct: structuredClone(power_user.instruct),
-        context: structuredClone(power_user.context),
-        sysprompt: structuredClone(power_user.sysprompt),
-        reasoning: structuredClone(power_user.reasoning),
-    };
-    addDebugLog('已保存原始预设快照');
-}
-
-function flattenMasterPreset(preset) {
-    if (preset.instruct || preset.context || preset.sysprompt || preset.reasoning) {
-        var flat = {};
-        if (preset.instruct) Object.assign(flat, preset.instruct);
-        if (preset.context) Object.assign(flat, preset.context);
-        if (preset.sysprompt) Object.assign(flat, preset.sysprompt);
-        if (preset.reasoning) Object.assign(flat, preset.reasoning);
-        if (preset.preset) Object.assign(flat, preset.preset);
-        return flat;
-    }
-    return preset;
-}
-
-function applyNsfwPresets(preset) {
-    if (!preset) return;
-    saveOriginalPresets();
-    preset = flattenMasterPreset(preset);
-
-    var mods = extension_settings[EXTENSION_NAME].nsfwPresetModules || {};
-
-    if (mods.instruct !== false) {
-        var instructFields = PRESET_MODULES.find(function(m) { return m.id === 'instruct'; }).fields;
-        for (var i = 0; i < instructFields.length; i++) {
-            var key = instructFields[i];
-            if (preset[key] !== undefined && mods['instruct_' + key] !== false) {
-                power_user.instruct[key] = preset[key];
-            }
-        }
-        if (preset.names_behavior !== undefined && mods['instruct_names_behavior'] !== false) {
-            power_user.instruct.names_behavior = typeof preset.names_behavior === 'number'
-                ? (['none', 'force', 'always'])[preset.names_behavior] || 'force'
-                : preset.names_behavior;
-        }
-        if (preset.wrap_in_quotes !== undefined && mods['instruct_wrap'] !== false) {
-            power_user.instruct.wrap = preset.wrap_in_quotes;
-        }
-    }
-
-    if (mods.context !== false) {
-        var contextModule = PRESET_MODULES.find(function(m) { return m.id === 'context'; });
-        for (var i = 0; i < contextModule.fields.length; i++) {
-            var key = contextModule.fields[i];
-            if (preset[key] !== undefined && mods['context_' + key] !== false) {
-                if (['always_force_name2', 'trim_sentences', 'single_line'].indexOf(key) !== -1) {
-                    power_user[key] = preset[key];
-                } else {
-                    power_user.context[key] = preset[key];
-                }
-            }
-        }
-    }
-
-    if (mods.sysprompt !== false) {
-        var syspromptFields = PRESET_MODULES.find(function(m) { return m.id === 'sysprompt'; }).fields;
-        for (var i = 0; i < syspromptFields.length; i++) {
-            var key = syspromptFields[i];
-            if (preset[key] !== undefined && mods['sysprompt_' + key] !== false) {
-                power_user.sysprompt[key] = preset[key];
-            }
-        }
-    }
-
-    if (mods.reasoning !== false) {
-        var reasoningFields = PRESET_MODULES.find(function(m) { return m.id === 'reasoning'; }).fields;
-        for (var i = 0; i < reasoningFields.length; i++) {
-            var key = reasoningFields[i];
-            if (preset[key] !== undefined && mods['reasoning_' + key] !== false) {
-                power_user.reasoning[key] = preset[key];
-            }
-        }
-    }
-
-    if (mods.prompts !== false && Array.isArray(preset.prompts)) {
-        addLog('检测到自定义提示词 (' + preset.prompts.length + ' 个)，已跳过', 'info');
-    }
-
-    addLog('已应用 NSFW 预设: ' + (preset.name || preset.display_name || '未命名'), 'info');
 }
 
 function escapeHtml(str) {
@@ -197,16 +107,6 @@ function buildDefaultEnabledModules(preset) {
     return enabled;
 }
 
-function restoreOriginalPresets() {
-    if (!originalPresets) return;
-    if (originalPresets.instruct) Object.assign(power_user.instruct, originalPresets.instruct);
-    if (originalPresets.context) Object.assign(power_user.context, originalPresets.context);
-    if (originalPresets.sysprompt) Object.assign(power_user.sysprompt, originalPresets.sysprompt);
-    if (originalPresets.reasoning) Object.assign(power_user.reasoning, originalPresets.reasoning);
-    originalPresets = null;
-    addLog('已恢复原始预设', 'info');
-}
-
 function createSettingsHtml() {
     return '<div class="inline-drawer"><div class="inline-drawer-toggle inline-drawer-header"><b><i class="fa-solid fa-shield-halved" style="margin-right: 8px;"></i>NSFW模型切换器</b><div class="inline-drawer-icon fa-solid fa-circle-chevron-down"></div></div><div class="inline-drawer-content"><div style="padding: 15px;"><div style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px; padding: 10px; background: #f8f9fa; border-radius: 4px;"><div id="nsfw_switcher_status_indicator" style="width: 10px; height: 10px; border-radius: 50%; background: #f39c12;"></div><div><strong>状态:</strong><span id="nsfw_switcher_status_text">启动中...</span><span id="nsfw_switcher_state_text" style="margin-left: 12px; font-size: 12px; color: #888;"></span></div></div>' +
         '<div style="margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #eee;"><div style="font-weight: 600; color: #333; margin-bottom: 10px;"><i class="fa-solid fa-toggle-on" style="margin-right: 8px;"></i>启用插件</div><label style="display: flex; align-items: center; gap: 8px; cursor: pointer;"><input type="checkbox" id="nsfw_switcher_enabled" checked><span>启用NSFW检测</span></label></div>' +
@@ -266,6 +166,8 @@ function bindSettingsListeners($panel) {
     });
     $panel.on('click', '#nsfw_switcher_restore_btn', async function () {
         setInterceptEnabled(false);
+        deactivateOverrides();
+        setPresetOverrides(null);
         state.onManualRestore();
         await restoreOriginalModel();
         clearSettingsSnapshot();
@@ -540,13 +442,9 @@ async function onGenerationStarted(type, params, dryRun) {
         addLog('生成开始 → 启用拦截（上次回复为 NSFW）', 'info');
         var activePreset = getActivePreset();
         if (activePreset && activePreset.data) {
-            applyNsfwPresets(activePreset.data);
+            var mods = extension_settings[EXTENSION_NAME].nsfwPresetModules || {};
+            activateOverrides(activePreset.data, mods);
             var genParams = extractGenParams(activePreset.data);
-            if (genParams) {
-                Object.keys(genParams).forEach(function(key) {
-                    if (key !== 'stream_openai') power_user[key] = genParams[key];
-                });
-            }
             setPresetOverrides(genParams);
         }
         setInterceptEnabled(true);
@@ -554,8 +452,9 @@ async function onGenerationStarted(type, params, dryRun) {
     } else if (action === 'restore') {
         addLog('生成开始 → 禁用拦截（上次回复正常）', 'info');
         setInterceptEnabled(false);
-        restoreOriginalPresets();
+        deactivateOverrides();
         setPresetOverrides(null);
+        state.onRestoreApplied();
     } else {
         if (settings.debugMode) addDebugLog('生成开始 → 无需操作');
     }
@@ -610,8 +509,9 @@ $(() => {
     currentDetectionId = 0;
     detectionAbortController = null;
 
+    initProxies();
     initFetchInterceptor();
-    setOnRequestRedirected(function () { restoreOriginalPresets(); });
+    setOnRequestRedirected(function () { deactivateOverrides(); });
 
 
     var $panel = $('<div id="nsfw_switcher_panel">' + createSettingsHtml() + '</div>').appendTo('#extensions_settings');
