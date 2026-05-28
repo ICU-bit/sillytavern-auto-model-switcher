@@ -118,17 +118,14 @@ export function updateStatusIndicator(settings, $container) {
     const $text = $container.find('#nsfw_switcher_status_text');
 
     if (!settings.enabled) {
-        $indicator.css('background', '#e74c3c');
+        $indicator.attr('data-state', 'disabled');
         $text.text('已禁用');
-        addLog('状态指示器更新: 已禁用', 'info');
     } else if (!settings.nsfwApiUrl || !settings.modelA || !settings.modelAApiUrl) {
-        $indicator.css('background', '#f39c12');
+        $indicator.attr('data-state', 'incomplete');
         $text.text('配置不完整');
-        addLog('状态指示器更新: 配置不完整', 'info');
     } else {
-        $indicator.css('background', '#27ae60');
+        $indicator.attr('data-state', 'running');
         $text.text('运行中');
-        addLog('状态指示器更新: 运行中', 'info');
     }
 }
 

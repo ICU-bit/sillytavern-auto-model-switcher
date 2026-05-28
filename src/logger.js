@@ -305,6 +305,19 @@ export async function copyLogsToClipboard(format, minLevel) {
 }
 
 /**
+ * 生成单条日志 HTML
+ * @param {object} log - 日志条目
+ * @returns {string}
+ */
+function renderLogEntryHtml(log) {
+    return `<div class="nsfw-log-entry" data-level="${log.level}">` +
+        `<span class="nsfw-log-timestamp">${log.timestamp}</span>` +
+        `<span class="nsfw-log-level" data-level="${log.level}">[${log.level.toUpperCase()}]</span>` +
+        `<span class="nsfw-log-message">${log.message}</span>` +
+        `</div>`;
+}
+
+/**
  * 生成日志 HTML（供设置面板使用）
  * @param {Array} logsArray
  * @param {string} [minLevel='debug'] - 最低显示级别
@@ -313,28 +326,15 @@ export async function copyLogsToClipboard(format, minLevel) {
 export function renderLogsHtml(logsArray, minLevel) {
     const items = logsArray || logs;
     const minPriority = LOG_LEVEL_PRIORITY[minLevel || 'debug'] || 0;
-    
+
     const filteredItems = items.filter(log => {
         const priority = LOG_LEVEL_PRIORITY[log.level] || 0;
         return priority >= minPriority;
     });
-    
+
     if (!filteredItems.length) {
-        return '<div style="color: #999; font-size: 12px; text-align: center;">暂无日志</div>';
+        return '<div class="nsfw-log-empty">暂无日志</div>';
     }
 
-    const levelColors = {
-        debug: '#9b59b6',   // purple for debug
-        info: '#3498db',    // blue for info
-        warn: '#f39c12',    // orange for warn
-        error: '#e74c3c',   // red for error
-    };
-
-    return filteredItems.map(log => `
-        <div style="display: flex; gap: 8px; padding: 4px 0; font-size: 12px;">
-            <span style="color: #999; font-family: monospace;">${log.timestamp}</span>
-            <span style="color: ${levelColors[log.level] || '#3498db'};">[${log.level.toUpperCase()}]</span>
-            <span style="color: #333;">${log.message}</span>
-        </div>
-    `).join('');
+    return filteredItems.map(renderLogEntryHtml).join('');
 }

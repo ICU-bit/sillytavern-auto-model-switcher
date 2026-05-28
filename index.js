@@ -44,17 +44,16 @@ function escapeHtml(str) {
 }
 
 function renderPresetModulesHtml(preset, enabled) {
-    if (!preset) return '<div style="font-size:12px;color:#888;">未导入预设</div>';
+    if (!preset) return '<div class="nsfw-preset-status">未导入预设</div>';
     var name = preset.name || preset.display_name || '未命名预设';
-    var html = '<div style="font-size:12px;font-weight:600;color:#333;margin-bottom:6px;">已导入: <span style="color:#27ae60;">' + name + '</span></div>';
-    html += '<div class="nsfw-preset-modules" style="border:1px solid #ddd;border-radius:4px;overflow:hidden;">';
+    var html = '<div class="nsfw-preset-status">已导入: <span class="preset-name">' + name + '</span></div>';
+    html += '<div class="nsfw-preset-modules">';
     for (var mi = 0; mi < PRESET_MODULES.length; mi++) {
         var m = PRESET_MODULES[mi];
         if (!m.test(preset)) continue;
         var modOn = !enabled || enabled[m.id] !== false;
-        html += '<div style="border-bottom:1px solid #eee;">';
-        html += '<div class="nsfw-module-header" data-module="' + m.id + '" style="padding:5px 8px;background:#f5f5f5;font-size:12px;font-weight:600;display:flex;align-items:center;gap:8px;border-bottom:1px solid #eee;">' +
-            '<input type="checkbox" class="nsfw-module-chk" data-module="' + m.id + '" ' + (modOn ? 'checked' : '') + ' style="margin:0;">' +
+        html += '<div class="nsfw-module-header" data-module="' + m.id + '">' +
+            '<input type="checkbox" class="nsfw-module-chk" data-module="' + m.id + '" ' + (modOn ? 'checked' : '') + '>' +
             m.name + '</div>';
 
         if (m.id === 'prompts' && Array.isArray(preset.prompts)) {
@@ -62,9 +61,9 @@ function renderPresetModulesHtml(preset, enabled) {
                 var pp = preset.prompts[pi];
                 var pfId = 'prompt_' + pi;
                 var pfOn = enabled && enabled[pfId] !== false;
-                html += '<div class="nsfw-field-row" data-field="' + pfId + '" style="padding:3px 8px 3px 24px;font-size:11px;color:#555;display:flex;align-items:center;gap:6px;cursor:pointer;">' +
-                    '<input type="checkbox" class="nsfw-field-chk" data-field="' + pfId + '" ' + (pfOn ? 'checked' : '') + ' style="margin:0;cursor:pointer;">' +
-                    '<span style="color:#333;">' + escapeHtml(pp.name || '(未命名)') + '</span></div>';
+                html += '<div class="nsfw-field-row" data-field="' + pfId + '">' +
+                    '<input type="checkbox" class="nsfw-field-chk" data-field="' + pfId + '" ' + (pfOn ? 'checked' : '') + '>' +
+                    '<span class="nsfw-field-value">' + escapeHtml(pp.name || '(未命名)') + '</span></div>';
             }
         } else if (m.fields) {
             for (var fi = 0; fi < m.fields.length; fi++) {
@@ -74,14 +73,13 @@ function renderPresetModulesHtml(preset, enabled) {
                     var fOn = enabled && enabled[fId] !== false;
                     var val = String(preset[fk]);
                     if (val.length > 80) val = val.substring(0, 80) + '...';
-                    html += '<div class="nsfw-field-row" data-field="' + fId + '" data-key="' + fk + '" style="padding:3px 8px 3px 24px;font-size:11px;color:#555;display:flex;align-items:center;gap:6px;cursor:pointer;">' +
-                        '<input type="checkbox" class="nsfw-field-chk" data-field="' + fId + '" ' + (fOn ? 'checked' : '') + ' style="margin:0;cursor:pointer;">' +
-                        '<span style="color:#888;flex-shrink:0;">' + fk + ':</span>' +
-                        '<span style="color:#333;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(val) + '</span></div>';
+                    html += '<div class="nsfw-field-row" data-field="' + fId + '" data-key="' + fk + '">' +
+                        '<input type="checkbox" class="nsfw-field-chk" data-field="' + fId + '" ' + (fOn ? 'checked' : '') + '>' +
+                        '<span class="nsfw-field-key">' + fk + ':</span>' +
+                        '<span class="nsfw-field-value">' + escapeHtml(val) + '</span></div>';
                 }
             }
         }
-        html += '</div>';
     }
     html += '</div>';
     return html;
@@ -107,37 +105,164 @@ function buildDefaultEnabledModules(preset) {
     return enabled;
 }
 
-function createSettingsHtml() {
-    return '<div class="inline-drawer"><div class="inline-drawer-toggle inline-drawer-header"><b><i class="fa-solid fa-shield-halved" style="margin-right: 8px;"></i>NSFW模型切换器</b><div class="inline-drawer-icon fa-solid fa-circle-chevron-down"></div></div><div class="inline-drawer-content"><div style="padding: 15px;"><div style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px; padding: 10px; background: #f8f9fa; border-radius: 4px;"><div id="nsfw_switcher_status_indicator" style="width: 10px; height: 10px; border-radius: 50%; background: #f39c12;"></div><div><strong>状态:</strong><span id="nsfw_switcher_status_text">启动中...</span><span id="nsfw_switcher_state_text" style="margin-left: 12px; font-size: 12px; color: #888;"></span></div></div>' +
-        '<div style="margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #eee;"><div style="font-weight: 600; color: #333; margin-bottom: 10px;"><i class="fa-solid fa-toggle-on" style="margin-right: 8px;"></i>启用插件</div><label style="display: flex; align-items: center; gap: 8px; cursor: pointer;"><input type="checkbox" id="nsfw_switcher_enabled" checked><span>启用NSFW检测</span></label></div>' +
-        '<div style="margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #eee;"><div style="font-weight: 600; color: #333; margin-bottom: 10px;"><i class="fa-solid fa-microscope" style="margin-right: 8px;"></i>轻量化检测模型（判断NSFW）</div>' +
-        '<div style="margin-bottom: 12px;"><label style="display: block; font-weight: 500; color: #555; margin-bottom: 5px; font-size: 13px;">API地址 <span style="color: #e74c3c;">*</span></label><input type="text" id="nsfw_switcher_api_url" style="width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; box-sizing: border-box;" placeholder="https://api.example.com/v1/chat/completions"></div>' +
-        '<div style="margin-bottom: 12px;"><label style="display: block; font-weight: 500; color: #555; margin-bottom: 5px; font-size: 13px;">API密钥</label><input type="password" id="nsfw_switcher_api_key" style="width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; box-sizing: border-box;" placeholder="sk-... (可选)"></div>' +
-        '<div style="margin-bottom: 12px;"><label style="display: block; font-weight: 500; color: #555; margin-bottom: 5px; font-size: 13px;">模型名称</label><input type="text" id="nsfw_switcher_model_name" style="width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; box-sizing: border-box;" placeholder="nsfw-detector"></div></div>' +
-        '<div style="margin-bottom: 15px;"><div style="font-weight: 600; color: #333; margin-bottom: 10px;"><i class="fa-solid fa-arrow-right-arrow-left" style="margin-right: 8px;"></i>切换目标模型（NSFW场景使用）</div>' +
-        '<div style="margin-bottom: 12px;"><label style="display: block; font-weight: 500; color: #555; margin-bottom: 5px; font-size: 13px;">目标模型名称 <span style="color: #e74c3c;">*</span></label><input type="text" id="nsfw_switcher_model_a" style="width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; box-sizing: border-box;" placeholder="gpt-4"></div>' +
-        '<div style="margin-bottom: 12px;"><label style="display: block; font-weight: 500; color: #555; margin-bottom: 5px; font-size: 13px;">目标模型API地址 <span style="color: #e74c3c;">*</span></label><input type="text" id="nsfw_switcher_model_a_api_url" style="width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; box-sizing: border-box;" placeholder="https://api.example.com/v1/chat/completions"></div>' +
-        '<div style="margin-bottom: 12px;"><label style="display: block; font-weight: 500; color: #555; margin-bottom: 5px; font-size: 13px;">目标模型API密钥</label><input type="password" id="nsfw_switcher_model_a_api_key" style="width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; box-sizing: border-box;" placeholder="sk-... (可选)"></div>' +
-        '<div style="margin-bottom: 12px;"><label style="display: flex; align-items: center; gap: 8px; cursor: pointer;"><input type="checkbox" id="nsfw_switcher_show_notification" checked><span style="font-size: 13px;">显示切换通知</span></label></div>' +
-        '<div style="margin-bottom: 12px;"><label style="display: flex; align-items: center; gap: 8px; cursor: pointer;"><input type="checkbox" id="nsfw_switcher_debug_mode"><span style="font-size: 13px;">调试模式（显示详细日志）</span></label></div><div style="margin-bottom: 12px;"><label style="display: block; font-weight: 500; color: #555; margin-bottom: 5px; font-size: 13px;">日志级别</label><select id="nsfw_switcher_debug_level" style="width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; box-sizing: border-box;"><option value="debug">Debug（详细调试）</option><option value="info" selected>Info（一般信息）</option><option value="warn">Warn（警告）</option><option value="error">Error（仅错误）</option></select></div></div>' +
-        '<div style="margin-bottom: 15px; padding: 12px; background: #f8f9fa; border-radius: 4px;">' +
-        '<div class="title_restorable standoutHeader" style="margin-bottom: 10px;">' +
-        '<div style="font-weight: 600; color: #333;"><i class="fa-solid fa-file-import" style="margin-right: 8px;"></i>NSFW 预设</div>' +
-        '<div class="flex-container alignItemsCenter">' +
+// ---------------------------------------------------------------------------
+//  Settings HTML — Section Builders
+// ---------------------------------------------------------------------------
+
+/** 构建表单输入字段 HTML (label + input) */
+function buildInputFieldHtml(id, labelText, type, placeholder, required) {
+    var reqMark = required ? ' <span class="required">*</span>' : '';
+    return '<div class="nsfw-field-group">' +
+        '<label class="nsfw-field-label" for="' + id + '">' +
+        labelText + reqMark + '</label>' +
+        '<input type="' + type + '" id="' + id + '" class="nsfw-input"' +
+        (placeholder ? ' placeholder="' + placeholder + '"' : '') + '>' +
+        '</div>';
+}
+
+/** 构建复选框字段 HTML */
+function buildCheckboxFieldHtml(id, labelText, checked) {
+    return '<label class="nsfw-checkbox-row" for="' + id + '">' +
+        '<input type="checkbox" id="' + id + '"' + (checked ? ' checked' : '') + '>' +
+        '<span>' + labelText + '</span>' +
+        '</label>';
+}
+
+/** 构建带图标的区块标题 HTML */
+function buildSectionTitleHtml(iconClass, titleText) {
+    return '<div class="nsfw-section-title">' +
+        '<i class="' + iconClass + '"></i>' + titleText +
+        '</div>';
+}
+
+/** 状态指示器区域 */
+function buildStatusSectionHtml() {
+    return '<div class="nsfw-status-bar">' +
+        '<div class="nsfw-status-indicator" id="nsfw_switcher_status_indicator" data-state="incomplete"></div>' +
+        '<span class="nsfw-status-text">状态:</span> ' +
+        '<span class="nsfw-status-text" id="nsfw_switcher_status_text">启动中...</span>' +
+        '<span class="nsfw-state-text" id="nsfw_switcher_state_text"></span>' +
+        '</div>';
+}
+
+/** 启用插件开关 */
+function buildEnableSectionHtml() {
+    return '<div class="nsfw-settings-section">' +
+        buildSectionTitleHtml('fa-solid fa-toggle-on', '启用插件') +
+        '<label class="nsfw-checkbox-row" for="nsfw_switcher_enabled">' +
+        '<input type="checkbox" id="nsfw_switcher_enabled" checked>' +
+        '<span>启用NSFW检测</span>' +
+        '</label></div>';
+}
+
+/** 轻量化检测模型配置 */
+function buildDetectionModelSectionHtml() {
+    return '<div class="nsfw-settings-section">' +
+        buildSectionTitleHtml('fa-solid fa-microscope', '轻量化检测模型（判断NSFW）') +
+        buildInputFieldHtml('nsfw_switcher_api_url', 'API地址', 'text', 'https://api.example.com/v1/chat/completions', true) +
+        buildInputFieldHtml('nsfw_switcher_api_key', 'API密钥', 'password', 'sk-... (可选)', false) +
+        buildInputFieldHtml('nsfw_switcher_model_name', '模型名称', 'text', 'nsfw-detector', false) +
+        '</div>';
+}
+
+/** 切换目标模型配置 */
+function buildTargetModelSectionHtml() {
+    return '<div class="nsfw-settings-section">' +
+        buildSectionTitleHtml('fa-solid fa-arrow-right-arrow-left', '切换目标模型（NSFW场景使用）') +
+        buildInputFieldHtml('nsfw_switcher_model_a', '目标模型名称', 'text', 'gpt-4', true) +
+        buildInputFieldHtml('nsfw_switcher_model_a_api_url', '目标模型API地址', 'text', 'https://api.example.com/v1/chat/completions', true) +
+        buildInputFieldHtml('nsfw_switcher_model_a_api_key', '目标模型API密钥', 'password', 'sk-... (可选)', false) +
+        '</div>';
+}
+
+/** 选项设置 */
+function buildOptionsSectionHtml() {
+    return '<div class="nsfw-settings-section">' +
+        buildCheckboxFieldHtml('nsfw_switcher_show_notification', '显示切换通知', true) +
+        buildCheckboxFieldHtml('nsfw_switcher_debug_mode', '调试模式（显示详细日志）', false) +
+        '<div class="nsfw-field-group">' +
+        '<label class="nsfw-field-label" for="nsfw_switcher_debug_level">日志级别</label>' +
+        '<select id="nsfw_switcher_debug_level" class="nsfw-select">' +
+        '<option value="debug">Debug（详细调试）</option>' +
+        '<option value="info" selected>Info（一般信息）</option>' +
+        '<option value="warn">Warn（警告）</option>' +
+        '<option value="error">Error（仅错误）</option>' +
+        '</select></div></div>';
+}
+
+/** 预设管理区域 */
+function buildPresetSectionHtml() {
+    return '<div class="nsfw-preset-area">' +
+        '<div class="nsfw-preset-header">' +
+        '<div class="nsfw-section-title">' +
+        '<i class="fa-solid fa-file-import"></i>NSFW 预设</div>' +
+        '<div class="nsfw-preset-actions">' +
         '<div id="nsfw_preset_import_btn" class="menu_button menu_button_icon" title="导入预设"><i class="fa-solid fa-file-import"></i></div>' +
         '<div id="nsfw_preset_export_btn" class="menu_button menu_button_icon" title="导出预设"><i class="fa-solid fa-file-export"></i></div>' +
         '<div id="nsfw_preset_delete_btn" class="menu_button menu_button_icon" title="删除预设"><i class="fa-solid fa-trash"></i></div>' +
         '</div></div>' +
-        '<div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">' +
-        '<select id="nsfw_preset_selector" style="flex: 1; padding: 6px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; background: white;"></select>' +
+        '<div class="nsfw-preset-selector-row">' +
+        '<select id="nsfw_preset_selector" class="nsfw-select"></select>' +
         '<div id="nsfw_preset_save_btn" class="menu_button menu_button_icon" title="保存当前预设"><i class="fa-solid fa-save"></i></div>' +
         '<div id="nsfw_preset_rename_btn" class="menu_button menu_button_icon" title="重命名预设"><i class="fa-solid fa-pen"></i></div>' +
         '<div id="nsfw_preset_new_btn" class="menu_button menu_button_icon" title="新建预设"><i class="fa-solid fa-plus"></i></div>' +
         '</div>' +
-        '<input type="file" hidden id="nsfw_preset_file_input" accept=".json">' +
-        '<div id="nsfw_switcher_preset_status" style="margin-top: 8px; font-size: 12px; color: #888;">未导入预设</div></div>' +
-        '<div style="display: flex; gap: 10px; margin-bottom: 10px;"><button id="nsfw_switcher_test_btn" style="flex: 1; padding: 8px 12px; border: none; border-radius: 4px; font-size: 12px; font-weight: 500; cursor: pointer; background: #667eea; color: white;"><i class="fa-solid fa-play"></i> 测试API</button><button id="nsfw_switcher_restore_btn" style="flex: 1; padding: 8px 12px; border: none; border-radius: 4px; font-size: 12px; font-weight: 500; cursor: pointer; background: #e0e0e0; color: #555;"><i class="fa-solid fa-rotate-left"></i> 恢复原模型</button></div>' +
-        '<div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #eee;"><div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;"><div style="font-weight: 600; color: #333;"><i class="fa-solid fa-scroll" style="margin-right: 8px;"></i>运行日志</div><div style="display: flex; gap: 6px; align-items: center;"><select id="nsfw_switcher_log_level_filter" style="padding: 2px 4px; border: 1px solid #ddd; border-radius: 3px; font-size: 11px; background: #f5f5f5; color: #666;"><option value="debug">全部</option><option value="info">Info+</option><option value="warn">Warn+</option><option value="error">仅Error</option></select><button id="nsfw_switcher_clear_logs_btn" style="padding: 4px 8px; border: none; border-radius: 3px; font-size: 11px; cursor: pointer; background: #f5f5f5; color: #666;"><i class="fa-solid fa-trash"></i> 清空</button><button id="nsfw_switcher_copy_logs_btn" style="padding: 4px 8px; border: none; border-radius: 3px; font-size: 11px; cursor: pointer; background: #f5f5f5; color: #666;"><i class="fa-solid fa-copy"></i> 复制</button><button id="nsfw_switcher_export_logs_btn" style="padding: 4px 8px; border: none; border-radius: 3px; font-size: 11px; cursor: pointer; background: #f5f5f5; color: #666;"><i class="fa-solid fa-download"></i> 导出</button></div></div><div id="nsfw_switcher_logs" style="max-height: 200px; overflow-y: auto; background: #fafafa; border-radius: 4px; padding: 10px; font-family: monospace;"><div style="color: #999; font-size: 12px; text-align: center;">暂无日志</div></div></div></div></div>';
+        '<div class="nsfw-preset-status" id="nsfw_switcher_preset_status">未导入预设</div>' +
+        '</div>';
+}
+
+/** 操作按钮区域 */
+function buildActionButtonsHtml() {
+    return '<div class="nsfw-button-row">' +
+        '<button id="nsfw_switcher_test_btn" class="nsfw-btn nsfw-btn-primary">' +
+        '<i class="fa-solid fa-play"></i> 测试API</button>' +
+        '<button id="nsfw_switcher_restore_btn" class="nsfw-btn nsfw-btn-secondary">' +
+        '<i class="fa-solid fa-rotate-left"></i> 恢复原模型</button>' +
+        '</div>';
+}
+
+/** 运行日志区域 */
+function buildLogsSectionHtml() {
+    return '<div class="nsfw-log-section">' +
+        '<div class="nsfw-log-header">' +
+        '<div class="nsfw-section-title">' +
+        '<i class="fa-solid fa-scroll"></i>运行日志</div>' +
+        '<div class="nsfw-log-toolbar">' +
+        '<select id="nsfw_switcher_log_level_filter" class="nsfw-select">' +
+        '<option value="debug">全部</option>' +
+        '<option value="info">Info+</option>' +
+        '<option value="warn">Warn+</option>' +
+        '<option value="error">仅Error</option>' +
+        '</select>' +
+        '<button id="nsfw_switcher_clear_logs_btn" class="nsfw-log-btn">' +
+        '<i class="fa-solid fa-trash"></i> 清空</button>' +
+        '<button id="nsfw_switcher_copy_logs_btn" class="nsfw-log-btn">' +
+        '<i class="fa-solid fa-copy"></i> 复制</button>' +
+        '<button id="nsfw_switcher_export_logs_btn" class="nsfw-log-btn">' +
+        '<i class="fa-solid fa-download"></i> 导出</button>' +
+        '</div></div>' +
+        '<div class="nsfw-log-viewer" id="nsfw_switcher_logs">' +
+        '<div class="nsfw-log-empty">暂无日志</div>' +
+        '</div></div>';
+}
+
+/** 组装完整设置面板 HTML */
+function createSettingsHtml() {
+    return '<div class="inline-drawer">' +
+        '<div class="inline-drawer-toggle inline-drawer-header">' +
+        '<b><i class="fa-solid fa-shield-halved"></i>NSFW模型切换器</b>' +
+        '<div class="inline-drawer-icon fa-solid fa-circle-chevron-down"></div>' +
+        '</div>' +
+        '<div class="inline-drawer-content">' +
+        buildStatusSectionHtml() +
+        buildEnableSectionHtml() +
+        buildDetectionModelSectionHtml() +
+        buildTargetModelSectionHtml() +
+        buildOptionsSectionHtml() +
+        buildPresetSectionHtml() +
+        buildActionButtonsHtml() +
+        buildLogsSectionHtml() +
+        '</div></div>';
 }
 
 function setupLogRendering() {
@@ -221,7 +346,7 @@ function bindSettingsListeners($panel) {
         addLog('切换预设: ' + (name || '(无)'), 'info');
     });
 
-    var $presetFileInput = $('<input type="file" accept=".json" style="display:none">');
+    var $presetFileInput = $('<input type="file" accept=".json" class="nsfw-hidden">');
     $('body').append($presetFileInput);
     $panel.on('click', '#nsfw_preset_import_btn', function () { $presetFileInput.click(); });
     $presetFileInput.on('change', function (e) {
@@ -360,9 +485,9 @@ function bindSettingsListeners($panel) {
             var idx = parseInt(fid.split('_')[1], 10);
             if (!isNaN(idx) && presetData.prompts && presetData.prompts[idx]) val = presetData.prompts[idx].content || '';
         }
-        var $editor = $('<div class="nsfw-editor" style="padding:4px 8px 8px 32px;display:none;">' +
-            '<textarea style="width:100%;min-height:40px;font-size:11px;padding:4px;border:1px solid #ddd;border-radius:3px;box-sizing:border-box;font-family:monospace;">' + escapeHtml(String(val)) + '</textarea>' +
-            '<button class="nsfw-editor-save" style="margin-top:4px;padding:3px 10px;font-size:11px;background:#27ae60;color:white;border:none;border-radius:3px;cursor:pointer;">保存</button>' +
+        var $editor = $('<div class="nsfw-editor" style="display:none;">' +
+            '<textarea>' + escapeHtml(String(val)) + '</textarea>' +
+            '<button class="nsfw-editor-save">保存</button>' +
             '</div>');
         $row.after($editor);
         $editor.slideDown(100);
