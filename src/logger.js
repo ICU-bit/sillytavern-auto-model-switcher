@@ -325,7 +325,7 @@ function escapeHtml(str) {
  * @param {object} log - 日志条目
  * @returns {string}
  */
-function renderLogEntryHtml(log) {
+export function renderLogEntryHtml(log) {
     return `<div class="nsfw-log-entry" data-level="${log.level}">` +
         `<span class="nsfw-log-timestamp">${escapeHtml(log.timestamp)}</span>` +
         `<span class="nsfw-log-level" data-level="${log.level}">[${log.level.toUpperCase()}]</span>` +
