@@ -23,6 +23,7 @@
 
 import { extension_settings } from '../../../../extensions.js';
 import { saveSettingsDebounced } from '../../../../../script.js';
+import { addLog, addDebugLog } from './logger.js';
 
 export const EXTENSION_NAME = 'nsfw-model-switcher';
 
@@ -37,8 +38,12 @@ export const DEFAULT_SETTINGS = {
     modelA: '',
     modelAApiUrl: '',
     modelAApiKey: '',
+    nsfwPresetData: null,
+    nsfwPresets: {},
+    activePresetName: '',
     showNotification: true,
     debugMode: false,
+    debugLevel: 'error',  // 'debug' | 'info' | 'warn' | 'error'
 };
 
 /**
@@ -50,10 +55,13 @@ export function loadSettings() {
     if (!stored) {
         // 首次运行，用默认值初始化
         extension_settings[EXTENSION_NAME] = { ...DEFAULT_SETTINGS };
+        addDebugLog('设置已加载: enabled=' + extension_settings[EXTENSION_NAME].enabled + ', debugMode=' + extension_settings[EXTENSION_NAME].debugMode);
         return { ...DEFAULT_SETTINGS };
     }
     // 合并默认值，确保新增字段也有默认值
-    return { ...DEFAULT_SETTINGS, ...stored };
+    const merged = { ...DEFAULT_SETTINGS, ...stored };
+    addDebugLog('设置已加载: enabled=' + merged.enabled + ', debugMode=' + merged.debugMode);
+    return merged;
 }
 
 /**
@@ -69,9 +77,14 @@ export function collectAndSaveFromDom($formContainer) {
         modelA: $formContainer.find('#nsfw_switcher_model_a').val(),
         modelAApiUrl: $formContainer.find('#nsfw_switcher_model_a_api_url').val(),
         modelAApiKey: $formContainer.find('#nsfw_switcher_model_a_api_key').val(),
+        nsfwPresetData: extension_settings[EXTENSION_NAME]?.nsfwPresetData || null,
+        nsfwPresets: extension_settings[EXTENSION_NAME]?.nsfwPresets || {},
+        activePresetName: extension_settings[EXTENSION_NAME]?.activePresetName || '',
         showNotification: $formContainer.find('#nsfw_switcher_show_notification').prop('checked'),
         debugMode: $formContainer.find('#nsfw_switcher_debug_mode').prop('checked'),
+        debugLevel: $formContainer.find('#nsfw_switcher_debug_level').val() || 'info',
     };
+    addDebugLog('设置已从DOM收集并保存');
     saveSettingsDebounced();
 }
 
@@ -88,8 +101,11 @@ export function applySettingsToDom(settings, $formContainer) {
     $formContainer.find('#nsfw_switcher_model_a').val(settings.modelA);
     $formContainer.find('#nsfw_switcher_model_a_api_url').val(settings.modelAApiUrl);
     $formContainer.find('#nsfw_switcher_model_a_api_key').val(settings.modelAApiKey);
+    // nsfwPresetData 通过按钮交互设置，不通过 DOM 表单同步
     $formContainer.find('#nsfw_switcher_show_notification').prop('checked', settings.showNotification);
     $formContainer.find('#nsfw_switcher_debug_mode').prop('checked', settings.debugMode);
+    $formContainer.find('#nsfw_switcher_debug_level').val(settings.debugLevel || 'info');
+    addDebugLog('设置已应用到DOM');
 }
 
 /**
@@ -102,13 +118,88 @@ export function updateStatusIndicator(settings, $container) {
     const $text = $container.find('#nsfw_switcher_status_text');
 
     if (!settings.enabled) {
-        $indicator.css('background', '#e74c3c');
+        $indicator.attr('data-state', 'disabled');
         $text.text('已禁用');
     } else if (!settings.nsfwApiUrl || !settings.modelA || !settings.modelAApiUrl) {
-        $indicator.css('background', '#f39c12');
+        $indicator.attr('data-state', 'incomplete');
         $text.text('配置不完整');
     } else {
-        $indicator.css('background', '#27ae60');
+        $indicator.attr('data-state', 'running');
         $text.text('运行中');
     }
+}
+
+export function getAllPresetNames() {
+    return Object.keys(extension_settings[EXTENSION_NAME].nsfwPresets || {});
+}
+
+export function getActivePreset() {
+    var settings = extension_settings[EXTENSION_NAME];
+    var name = settings.activePresetName;
+    if (name && settings.nsfwPresets && settings.nsfwPresets[name]) {
+        return settings.nsfwPresets[name];
+    }
+    return null;
+}
+
+export function getActivePresetName() {
+    return extension_settings[EXTENSION_NAME].activePresetName || '';
+}
+
+export function savePresetAs(name, data, modules) {
+    if (!name || !data) return;
+    extension_settings[EXTENSION_NAME].nsfwPresets[name] = {
+        data: data,
+        modules: modules || {},
+    };
+    extension_settings[EXTENSION_NAME].activePresetName = name;
+    saveSettingsDebounced();
+    addLog('已保存预设: ' + name, 'success');
+}
+
+export function deletePreset(name) {
+    var presets = extension_settings[EXTENSION_NAME].nsfwPresets;
+    if (!presets || !presets[name]) return;
+    delete presets[name];
+    if (extension_settings[EXTENSION_NAME].activePresetName === name) {
+        var remaining = Object.keys(presets);
+        extension_settings[EXTENSION_NAME].activePresetName = remaining.length > 0 ? remaining[0] : '';
+    }
+    saveSettingsDebounced();
+    addLog('已删除预设: ' + name, 'info');
+}
+
+export function renamePreset(oldName, newName) {
+    if (!oldName || !newName || oldName === newName) return;
+    var presets = extension_settings[EXTENSION_NAME].nsfwPresets;
+    if (!presets[oldName] || presets[newName]) return;
+    presets[newName] = presets[oldName];
+    delete presets[oldName];
+    if (extension_settings[EXTENSION_NAME].activePresetName === oldName) {
+        extension_settings[EXTENSION_NAME].activePresetName = newName;
+    }
+    saveSettingsDebounced();
+    addLog('已重命名预设: ' + oldName + ' → ' + newName, 'success');
+}
+
+export function exportPreset(name) {
+    var presets = extension_settings[EXTENSION_NAME].nsfwPresets;
+    if (!presets || !presets[name]) return;
+    var exportData = {
+        nsfwSwitcherPreset: true,
+        version: 1,
+        name: name,
+        data: presets[name].data,
+        modules: presets[name].modules,
+    };
+    var blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'nsfw-preset-' + name.replace(/[^a-zA-Z0-9\u4e00-\u9fff]/g, '_') + '.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    addLog('已导出预设: ' + name, 'success');
 }

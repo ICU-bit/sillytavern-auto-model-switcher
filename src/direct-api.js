@@ -28,7 +28,7 @@
  */
 
 import { loadSettings } from './settings.js';
-import { addLog } from './logger.js';
+import { addLog, addApiRequestLog, addApiResponseLog, addApiErrorLog, addDebugLog } from './logger.js';
 
 // ST 的聊天补全 API 端点路径特征
 const ST_API_PATTERNS = [
@@ -39,6 +39,8 @@ const ST_API_PATTERNS = [
 
 let originalFetch = null;
 let interceptEnabled = false;
+let onRequestRedirected = null;
+let presetOverrides = null;
 
 /**
  * 初始化 fetch 拦截器（在插件加载时调用一次）
@@ -48,6 +50,7 @@ export function initFetchInterceptor() {
     if (originalFetch) return;
 
     originalFetch = window.fetch.bind(window);
+    addLog('fetch 拦截器已初始化', 'info', 'debug');
 
     window.fetch = async function (input, init) {
         const url = normalizeInputUrl(input);
@@ -92,10 +95,28 @@ export function initFetchInterceptor() {
  */
 export function setInterceptEnabled(enabled) {
     interceptEnabled = enabled;
+    addLog('fetch 拦截' + (enabled ? '已启用' : '已禁用'), 'info');
 }
 
 export function isInterceptEnabled() {
     return interceptEnabled;
+}
+
+export function setOnRequestRedirected(callback) {
+    onRequestRedirected = callback;
+}
+
+export function setPresetOverrides(params) {
+    presetOverrides = params;
+}
+
+function applyPresetToBody(directBody) {
+    if (!presetOverrides) return;
+    for (const [key, value] of Object.entries(presetOverrides)) {
+        if (value !== undefined) {
+            directBody[key] = value;
+        }
+    }
 }
 
 /**
@@ -166,11 +187,28 @@ async function redirectToTarget(originalBody, originalOptions) {
         }
     }
 
+    // NSFW 预设覆盖（如果有导入预设，用预设的生成参数覆盖透传值）
+    applyPresetToBody(directBody);
+
     const headers = {
         'Content-Type': 'application/json',
     };
     if (targetApiKey) {
         headers['Authorization'] = 'Bearer ' + targetApiKey;
+    }
+
+    // 记录请求日志（隐藏敏感信息）
+    const safeHeaders = { ...headers };
+    if (safeHeaders['Authorization']) {
+        safeHeaders['Authorization'] = 'Bearer ***';
+    }
+    addApiRequestLog(targetUrl, 'POST', safeHeaders, directBody);
+    
+    const startTime = Date.now();
+    
+    // ST 已格式化完毕，请求被接管 → 立即恢复原始预设
+    if (onRequestRedirected) {
+        onRequestRedirected();
     }
 
     // 15秒超时，防止目标API过慢导致用户长时间等待
@@ -196,17 +234,52 @@ async function redirectToTarget(originalBody, originalOptions) {
     try {
         const response = await originalFetch(targetUrl, fetchOptions);
         clearTimeout(timeoutId);
+        const duration = Date.now() - startTime;
 
         if (!response.ok) {
-            addLog('直接API调用失败: ' + targetUrl + ' 状态码 ' + response.status, 'error');
+            // 尝试读取响应体以获取错误详情
+            let errorBody = null;
+            try {
+                const clonedResponse = response.clone();
+                errorBody = await clonedResponse.text();
+                try { errorBody = JSON.parse(errorBody); } catch (e) { /* 保持文本格式 */ }
+            } catch (e) { /* 忽略读取错误 */ }
+
+            addApiErrorLog(targetUrl, {
+                name: 'HttpError',
+                message: 'HTTP ' + response.status,
+            }, duration);
+            addApiResponseLog(targetUrl, response.status, {}, errorBody, duration);
             return null;
         }
 
+        // 读取响应体
+        let responseBody = null;
+        try {
+            const clonedResponse = response.clone();
+            responseBody = await clonedResponse.text();
+            try { responseBody = JSON.parse(responseBody); } catch (e) { /* 保持文本格式 */ }
+        } catch (e) { /* 忽略读取错误 */ }
+
+        addApiResponseLog(targetUrl, 200, {}, responseBody, duration);
         addLog('直接API调用成功: ' + targetModel, 'success');
         return response;
     } catch (e) {
         clearTimeout(timeoutId);
-        addLog('直接API调用失败: ' + targetUrl + ' - ' + e.message, 'error');
+        const duration = Date.now() - startTime;
+
+        // 分类错误类型
+        let errorMessage = e.message;
+        if (e.name === 'AbortError') {
+            errorMessage = '请求超时或被取消';
+        } else if (e.message.includes('Failed to fetch') || e.message.includes('NetworkError')) {
+            errorMessage = '网络连接失败';
+        }
+
+        addApiErrorLog(targetUrl, {
+            name: e.name,
+            message: errorMessage,
+        }, duration);
         return null;
     }
 }

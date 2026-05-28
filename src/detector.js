@@ -21,7 +21,7 @@
  * 负责调用外部 API 检测文本内容是否为 NSFW
  */
 
-import { addLog } from './logger.js';
+import { addLog, addApiRequestLog, addApiResponseLog, addApiErrorLog, addDebugLog } from './logger.js';
 import { loadSettings } from './settings.js';
 import { getContext } from '../../../../extensions.js';
 
@@ -45,18 +45,36 @@ export async function detectNSFW(content, externalSignal) {
     const { nsfwApiUrl, nsfwApiKey, nsfwModelName, debugMode } = settings;
 
     if (!nsfwApiUrl) {
-        if (debugMode) {
-            addLog('未配置 NSFW 检测 API', 'warning');
-        }
-        return null;
+        addDebugLog('未配置 NSFW 检测 API', 'warning');
     }
+
+    const apiUrl = normalizeApiUrl(nsfwApiUrl);
+    const startTime = Date.now();
 
     try {
         const prompt = '判断以下内容是否为 NSFW（成人/色情内容）。请只回复数字 1（是）或 0（否），不要输出任何其他内容：\n\n' + content;
 
-        if (debugMode) {
-            addLog('调用 NSFW 检测 API...', 'info');
+        const requestBody = {
+            model: nsfwModelName || 'nsfw-detector',
+            messages: [{
+                role: 'user',
+                content: prompt,
+            }],
+            temperature: 0.0,
+            max_tokens: 5,
+        };
+
+        const headers = {
+            'Content-Type': 'application/json',
+            ...(nsfwApiKey ? { 'Authorization': 'Bearer ' + nsfwApiKey } : {}),
+        };
+
+        // 记录请求日志（隐藏敏感信息）
+        const safeHeaders = { ...headers };
+        if (safeHeaders['Authorization']) {
+            safeHeaders['Authorization'] = 'Bearer ***';
         }
+        addApiRequestLog(apiUrl, 'POST', safeHeaders, requestBody);
 
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 30000);
@@ -69,38 +87,40 @@ export async function detectNSFW(content, externalSignal) {
             }, { once: true });
         }
 
-        const apiUrl = normalizeApiUrl(nsfwApiUrl);
-
         const response = await fetch(apiUrl, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                ...(nsfwApiKey ? { 'Authorization': 'Bearer ' + nsfwApiKey } : {}),
-            },
-            body: JSON.stringify({
-                model: nsfwModelName || 'nsfw-detector',
-                messages: [{
-                    role: 'user',
-                    content: prompt,
-                }],
-                temperature: 0.0,
-                max_tokens: 5,
-            }),
+            headers: headers,
+            body: JSON.stringify(requestBody),
             signal: controller.signal,
         });
 
         clearTimeout(timeoutId);
+        const duration = Date.now() - startTime;
 
         if (!response.ok) {
+            // 尝试读取响应体以获取错误详情
+            let errorBody = null;
+            try {
+                const clonedResponse = response.clone();
+                errorBody = await clonedResponse.text();
+                try { errorBody = JSON.parse(errorBody); } catch (e) { /* 保持文本格式 */ }
+            } catch (e) { /* 忽略读取错误 */ }
+
+            addApiErrorLog(apiUrl, {
+                name: 'HttpError',
+                message: 'HTTP ' + response.status,
+            }, duration);
+            addApiResponseLog(apiUrl, response.status, {}, errorBody, duration);
             throw new Error('API 请求失败: ' + response.status);
         }
 
         const data = await response.json();
         const result = data.choices?.[0]?.message?.content?.trim();
 
-        if (debugMode) {
-            addLog('检测结果: ' + result, 'info');
-        }
+        // 记录响应日志
+        addApiResponseLog(apiUrl, 200, {}, data, duration);
+
+        addDebugLog('检测结果: ' + result);
 
         if (result === '1' || result === 'true' || result === '是' || result === 'yes') return true;
         if (result === '0' || result === 'false' || result === '否' || result === 'no') return false;
@@ -109,11 +129,20 @@ export async function detectNSFW(content, externalSignal) {
         addLog('无法解析检测结果: ' + result, 'warning');
         return null;
     } catch (error) {
+        const duration = Date.now() - startTime;
+
+        // 分类错误类型
+        let errorMessage = error.message;
         if (error.name === 'AbortError') {
-            addLog('检测请求超时或取消', 'error');
-        } else {
-            addLog('检测失败: ' + error.message, 'error');
+            errorMessage = '检测请求超时或取消';
+        } else if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+            errorMessage = '网络连接失败';
         }
+
+        addApiErrorLog(apiUrl, {
+            name: error.name,
+            message: errorMessage,
+        }, duration);
         return null;
     }
 }

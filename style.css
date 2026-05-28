@@ -1,0 +1,557 @@
+/**
+ * NSFW 模型切换器 — 样式表
+ *
+ * 使用 SillyTavern 原生设计令牌（CSS 变量），
+ * 配合 index.js 中的 #nsfw_switcher_panel 容器。
+ *
+ * 需要在 manifest.json 中添加:
+ *   "css": "style.css"
+ */
+
+/* ============================================================
+   0. 面板容器
+   ============================================================ */
+
+#nsfw_switcher_panel .inline-drawer-content {
+    padding: 10px;
+}
+
+#nsfw_switcher_panel .inline-drawer-header b i {
+    margin-right: 8px;
+}
+
+.nsfw-hidden {
+    display: none !important;
+}
+
+/* ============================================================
+   1. 状态指示栏
+   ============================================================ */
+
+.nsfw-status-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 15px;
+    padding: 10px 12px;
+    background: var(--black30a);
+    border-radius: 10px;
+    border: 1px solid var(--SmartThemeBorderColor);
+}
+
+.nsfw-status-indicator {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    transition: background-color var(--animation-duration-2x) ease;
+    box-shadow: 0 0 6px 1px currentColor;
+}
+
+.nsfw-status-indicator[data-state="disabled"] {
+    background: var(--fullred);
+    color: var(--fullred);
+}
+
+.nsfw-status-indicator[data-state="incomplete"] {
+    background: var(--golden);
+    color: var(--golden);
+}
+
+.nsfw-status-indicator[data-state="running"] {
+    background: var(--active);
+    color: var(--active);
+}
+
+.nsfw-status-text {
+    font-weight: 600;
+    font-size: calc(var(--mainFontSize) * 0.93);
+    color: var(--SmartThemeBodyColor);
+}
+
+.nsfw-state-text {
+    margin-left: auto;
+    font-size: calc(var(--mainFontSize) * 0.8);
+    color: var(--SmartThemeEmColor);
+    opacity: 0.8;
+}
+
+/* ============================================================
+   2. 通用表单控件
+   ============================================================ */
+
+.nsfw-settings-section {
+    margin-bottom: 15px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid var(--SmartThemeBorderColor);
+}
+
+.nsfw-settings-section:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+    padding-bottom: 0;
+}
+
+.nsfw-section-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+    font-size: calc(var(--mainFontSize) * 0.93);
+    color: var(--SmartThemeBodyColor);
+    margin-bottom: 10px;
+}
+
+.nsfw-section-title i {
+    opacity: 0.7;
+    width: 1.2em;
+    text-align: center;
+}
+
+.nsfw-field-group {
+    margin-bottom: 12px;
+}
+
+.nsfw-field-label {
+    display: block;
+    font-weight: 500;
+    font-size: calc(var(--mainFontSize) * 0.87);
+    color: var(--SmartThemeEmColor);
+    margin-bottom: 5px;
+}
+
+.nsfw-field-label .required {
+    color: var(--fullred);
+    margin-left: 2px;
+}
+
+.nsfw-input,
+.nsfw-select {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 10px;
+    font-size: calc(var(--mainFontSize) * 0.87);
+    font-family: var(--mainFontFamily);
+    color: var(--SmartThemeBodyColor);
+    background-color: var(--black30a);
+    box-sizing: border-box;
+    transition: border-color var(--animation-duration) ease,
+                box-shadow var(--animation-duration) ease;
+}
+
+.nsfw-input:focus,
+.nsfw-select:focus {
+    border-color: var(--SmartThemeQuoteColor);
+    outline: none;
+    box-shadow: 0 0 0 1px var(--SmartThemeQuoteColor);
+}
+
+.nsfw-input::placeholder {
+    color: var(--SmartThemeEmColor);
+    opacity: 0.5;
+}
+
+.nsfw-select {
+    cursor: pointer;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23999' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    padding-right: 30px;
+}
+
+/* ============================================================
+   3. 复选框 / 开关行
+   ============================================================ */
+
+.nsfw-checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    font-size: calc(var(--mainFontSize) * 0.87);
+    color: var(--SmartThemeBodyColor);
+    padding: 4px 0;
+}
+
+.nsfw-checkbox-row input[type="checkbox"] {
+    margin: 0;
+    cursor: pointer;
+    accent-color: var(--SmartThemeQuoteColor);
+}
+
+/* ============================================================
+   4. 操作按钮
+   ============================================================ */
+
+.nsfw-button-row {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.nsfw-btn {
+    flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px 12px;
+    border: none;
+    border-radius: 10px;
+    font-size: calc(var(--mainFontSize) * 0.8);
+    font-weight: 500;
+    font-family: var(--mainFontFamily);
+    cursor: pointer;
+    transition: filter var(--animation-duration) ease,
+                transform var(--animation-duration) ease;
+}
+
+.nsfw-btn:hover {
+    filter: brightness(1.2);
+}
+
+.nsfw-btn:active {
+    transform: scale(0.97);
+}
+
+.nsfw-btn-primary {
+    background: var(--SmartThemeQuoteColor);
+    color: var(--SmartThemeBodyColor);
+}
+
+.nsfw-btn-secondary {
+    background: var(--grey30a);
+    color: var(--SmartThemeBodyColor);
+    border: 1px solid var(--SmartThemeBorderColor);
+}
+
+/* ============================================================
+   5. 预设管理区
+   ============================================================ */
+
+.nsfw-preset-area {
+    margin-bottom: 15px;
+    padding: 12px;
+    background: var(--black30a);
+    border-radius: 10px;
+    border: 1px solid var(--SmartThemeBorderColor);
+}
+
+.nsfw-preset-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+}
+
+.nsfw-preset-header .nsfw-section-title {
+    margin-bottom: 0;
+}
+
+.nsfw-preset-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.nsfw-preset-selector-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.nsfw-preset-selector-row .nsfw-select {
+    flex: 1;
+}
+
+/* ============================================================
+   6. 预设模块列表（可折叠 + 字段开关）
+   ============================================================ */
+
+.nsfw-preset-modules {
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-top: 8px;
+}
+
+.nsfw-module-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    background: var(--black30a);
+    font-size: calc(var(--mainFontSize) * 0.8);
+    font-weight: 600;
+    color: var(--SmartThemeBodyColor);
+    border-bottom: 1px solid var(--SmartThemeBorderColor);
+    cursor: pointer;
+    transition: background var(--animation-duration) ease;
+}
+
+.nsfw-module-header:hover {
+    background: var(--white20a);
+}
+
+.nsfw-module-header input[type="checkbox"] {
+    margin: 0;
+    cursor: pointer;
+    accent-color: var(--SmartThemeQuoteColor);
+}
+
+.nsfw-field-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px 4px 28px;
+    font-size: calc(var(--mainFontSize) * 0.73);
+    color: var(--SmartThemeEmColor);
+    cursor: pointer;
+    transition: background var(--animation-duration) ease;
+    border-bottom: 1px solid var(--SmartThemeBorderColor);
+}
+
+.nsfw-field-row:last-child {
+    border-bottom: none;
+}
+
+.nsfw-field-row:hover {
+    background: var(--white20a);
+}
+
+.nsfw-field-row input[type="checkbox"] {
+    margin: 0;
+    cursor: pointer;
+    flex-shrink: 0;
+    accent-color: var(--SmartThemeQuoteColor);
+}
+
+.nsfw-field-key {
+    color: var(--SmartThemeEmColor);
+    flex-shrink: 0;
+    opacity: 0.7;
+    font-family: var(--monoFontFamily);
+    font-size: calc(var(--mainFontSize) * 0.7);
+}
+
+.nsfw-field-value {
+    color: var(--SmartThemeBodyColor);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
+
+.nsfw-preset-status {
+    margin-top: 8px;
+    font-size: calc(var(--mainFontSize) * 0.8);
+    color: var(--SmartThemeEmColor);
+    opacity: 0.7;
+}
+
+.nsfw-preset-status .preset-name {
+    color: var(--active);
+    font-weight: 600;
+}
+
+/* ============================================================
+   7. 字段内联编辑器
+   ============================================================ */
+
+.nsfw-editor {
+    padding: 6px 10px 10px 32px;
+}
+
+.nsfw-editor textarea {
+    width: 100%;
+    min-height: 48px;
+    font-size: calc(var(--mainFontSize) * 0.73);
+    padding: 6px 8px;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 10px;
+    box-sizing: border-box;
+    font-family: var(--monoFontFamily);
+    color: var(--SmartThemeBodyColor);
+    background: var(--black30a);
+    resize: vertical;
+    transition: border-color var(--animation-duration) ease;
+}
+
+.nsfw-editor textarea:focus {
+    border-color: var(--SmartThemeQuoteColor);
+    outline: none;
+}
+
+.nsfw-editor-save {
+    margin-top: 6px;
+    padding: 4px 14px;
+    font-size: calc(var(--mainFontSize) * 0.73);
+    background: var(--active);
+    color: var(--SmartThemeBodyColor);
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    font-family: var(--mainFontFamily);
+    transition: filter var(--animation-duration) ease;
+}
+
+.nsfw-editor-save:hover {
+    filter: brightness(1.2);
+}
+
+/* ============================================================
+   8. 运行日志区
+   ============================================================ */
+
+.nsfw-log-section {
+    margin-top: 15px;
+    padding-top: 15px;
+    border-top: 1px solid var(--SmartThemeBorderColor);
+}
+
+.nsfw-log-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+}
+
+.nsfw-log-header .nsfw-section-title {
+    margin-bottom: 0;
+}
+
+.nsfw-log-toolbar {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+
+.nsfw-log-toolbar .nsfw-select {
+    width: auto;
+    padding: 2px 24px 2px 6px;
+    font-size: calc(var(--mainFontSize) * 0.73);
+    border-radius: 6px;
+    background-position: right 6px center;
+}
+
+.nsfw-log-btn {
+    padding: 4px 8px;
+    border: none;
+    border-radius: 6px;
+    font-size: calc(var(--mainFontSize) * 0.73);
+    font-family: var(--mainFontFamily);
+    cursor: pointer;
+    background: var(--grey30a);
+    color: var(--SmartThemeBodyColor);
+    transition: filter var(--animation-duration) ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.nsfw-log-btn:hover {
+    filter: brightness(1.3);
+}
+
+.nsfw-log-viewer {
+    max-height: 200px;
+    overflow-y: auto;
+    background: var(--black30a);
+    border-radius: 10px;
+    padding: 10px;
+    font-family: var(--monoFontFamily);
+    font-size: calc(var(--mainFontSize) * 0.8);
+    border: 1px solid var(--SmartThemeBorderColor);
+}
+
+.nsfw-log-empty {
+    color: var(--SmartThemeEmColor);
+    font-size: calc(var(--mainFontSize) * 0.8);
+    text-align: center;
+    opacity: 0.6;
+    padding: 10px 0;
+}
+
+.nsfw-log-entry {
+    display: flex;
+    gap: 8px;
+    padding: 3px 0;
+    line-height: 1.4;
+    border-bottom: 1px solid var(--SmartThemeBorderColor);
+}
+
+.nsfw-log-entry:last-child {
+    border-bottom: none;
+}
+
+.nsfw-log-timestamp {
+    color: var(--SmartThemeEmColor);
+    font-size: calc(var(--mainFontSize) * 0.73);
+    flex-shrink: 0;
+    opacity: 0.6;
+}
+
+.nsfw-log-level {
+    flex-shrink: 0;
+    font-weight: 600;
+    font-size: calc(var(--mainFontSize) * 0.73);
+    min-width: 3.5em;
+}
+
+.nsfw-log-level[data-level="debug"] {
+    color: #9b59b6; /* no ST purple variable available */
+}
+
+.nsfw-log-level[data-level="info"] {
+    color: var(--SmartThemeUnderlineColor);
+}
+
+.nsfw-log-level[data-level="warn"] {
+    color: var(--golden);
+}
+
+.nsfw-log-level[data-level="error"] {
+    color: var(--fullred);
+}
+
+.nsfw-log-message {
+    color: var(--SmartThemeBodyColor);
+    word-break: break-word;
+    min-width: 0;
+}
+
+/* ============================================================
+   9. 动画
+   ============================================================ */
+
+@keyframes nsfw-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+.nsfw-status-indicator[data-state="running"] {
+    animation: nsfw-pulse 2s ease-in-out infinite;
+}
+
+/* ============================================================
+   10. 响应式 / 紧凑模式
+   ============================================================ */
+
+@media (max-width: 480px) {
+    .nsfw-button-row {
+        flex-direction: column;
+    }
+
+    .nsfw-preset-selector-row {
+        flex-wrap: wrap;
+    }
+
+    .nsfw-log-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 6px;
+    }
+}
