@@ -15,6 +15,15 @@ desktop.ini
 node_modules/
 npm-debug.log*
 
+# AI 工具配置
+.claude/
+.opencode/
+.omo/
+.cursor/
+.copilot/
+.windsurf/
+AGENTS.md
+
 # SillyTavern 本地配置（这些是用户个人的，不应提交）
 # 注意：插件本身不产生这些文件，但若开发者在 ST 目录下工作可忽略
 settings.json
