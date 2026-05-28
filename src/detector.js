@@ -45,7 +45,8 @@ export async function detectNSFW(content, externalSignal) {
     const { nsfwApiUrl, nsfwApiKey, nsfwModelName, debugMode } = settings;
 
     if (!nsfwApiUrl) {
-        addDebugLog('未配置 NSFW 检测 API', 'warning');
+        addLog('未配置 NSFW 检测 API 地址，跳过检测', 'warning');
+        return null;
     }
 
     const apiUrl = normalizeApiUrl(nsfwApiUrl);

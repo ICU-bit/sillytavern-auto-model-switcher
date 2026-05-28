@@ -43,7 +43,7 @@ export const DEFAULT_SETTINGS = {
     activePresetName: '',
     showNotification: true,
     debugMode: false,
-    debugLevel: 'error',  // 'debug' | 'info' | 'warn' | 'error'
+    debugLevel: 'info',  // 'debug' | 'info' | 'warn' | 'error'
 };
 
 /**
@@ -79,6 +79,7 @@ export function collectAndSaveFromDom($formContainer) {
         modelAApiKey: $formContainer.find('#nsfw_switcher_model_a_api_key').val(),
         nsfwPresetData: extension_settings[EXTENSION_NAME]?.nsfwPresetData || null,
         nsfwPresets: extension_settings[EXTENSION_NAME]?.nsfwPresets || {},
+        nsfwPresetModules: extension_settings[EXTENSION_NAME]?.nsfwPresetModules || {},
         activePresetName: extension_settings[EXTENSION_NAME]?.activePresetName || '',
         showNotification: $formContainer.find('#nsfw_switcher_show_notification').prop('checked'),
         debugMode: $formContainer.find('#nsfw_switcher_debug_mode').prop('checked'),

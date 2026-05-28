@@ -57,7 +57,8 @@ var GEN_PARAM_KEYS = [
 var CONTEXT_GLOBAL_KEYS = ['always_force_name2', 'trim_sentences', 'single_line'];
 
 // 幂等标记，防止重复安装 Proxy
-var NSFW_PROXY_MARKER = Symbol('nsfw_proxied');
+// 使用字符串而非 Symbol — Symbol 在模块热重载时会创建新值，导致标记失效
+var NSFW_PROXY_MARKER = '__nsfw_proxy_installed__';
 
 // 安全超时时间（毫秒）
 var SAFETY_TIMEOUT_MS = 30000;

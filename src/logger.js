@@ -305,15 +305,24 @@ export async function copyLogsToClipboard(format, minLevel) {
 }
 
 /**
+ * 转义 HTML 特殊字符（防 XSS）
+ * @param {string} str
+ * @returns {string}
+ */
+function escapeHtml(str) {
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/**
  * 生成单条日志 HTML
  * @param {object} log - 日志条目
  * @returns {string}
  */
 function renderLogEntryHtml(log) {
     return `<div class="nsfw-log-entry" data-level="${log.level}">` +
-        `<span class="nsfw-log-timestamp">${log.timestamp}</span>` +
+        `<span class="nsfw-log-timestamp">${escapeHtml(log.timestamp)}</span>` +
         `<span class="nsfw-log-level" data-level="${log.level}">[${log.level.toUpperCase()}]</span>` +
-        `<span class="nsfw-log-message">${log.message}</span>` +
+        `<span class="nsfw-log-message">${escapeHtml(log.message)}</span>` +
         `</div>`;
 }
 
