@@ -244,6 +244,29 @@
     align-items: center;
     justify-content: space-between;
     margin-bottom: 10px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.nsfw-preset-header:hover {
+    opacity: 0.9;
+}
+
+.nsfw-preset-header-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.nsfw-collapse-icon {
+    font-size: calc(var(--mainFontSize) * 0.8);
+    color: var(--SmartThemeEmColor);
+    transition: transform var(--animation-duration-2x) ease;
+    flex-shrink: 0;
+}
+
+.nsfw-collapse-icon.nsfw-expanded {
+    transform: rotate(180deg);
 }
 
 .nsfw-preset-header .nsfw-section-title {
@@ -417,6 +440,18 @@
     align-items: center;
     justify-content: space-between;
     margin-bottom: 10px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.nsfw-log-header:hover {
+    opacity: 0.9;
+}
+
+.nsfw-log-header-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
 .nsfw-log-header .nsfw-section-title {

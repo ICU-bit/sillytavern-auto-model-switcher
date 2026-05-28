@@ -193,14 +193,18 @@ function buildOptionsSectionHtml() {
 /** 预设管理区域 */
 function buildPresetSectionHtml() {
     return '<div class="nsfw-preset-area">' +
-        '<div class="nsfw-preset-header">' +
+        '<div class="nsfw-preset-header" data-toggle="preset">' +
         '<div class="nsfw-section-title">' +
         '<i class="fa-solid fa-file-import"></i>NSFW 预设</div>' +
+        '<div class="nsfw-preset-header-right">' +
         '<div class="nsfw-preset-actions">' +
         '<div id="nsfw_preset_import_btn" class="menu_button menu_button_icon" title="导入预设"><i class="fa-solid fa-file-import"></i></div>' +
         '<div id="nsfw_preset_export_btn" class="menu_button menu_button_icon" title="导出预设"><i class="fa-solid fa-file-export"></i></div>' +
         '<div id="nsfw_preset_delete_btn" class="menu_button menu_button_icon" title="删除预设"><i class="fa-solid fa-trash"></i></div>' +
+        '</div>' +
+        '<i class="fa-solid fa-chevron-down nsfw-collapse-icon"></i>' +
         '</div></div>' +
+        '<div class="nsfw-preset-content" style="display:none;">' +
         '<div class="nsfw-preset-selector-row">' +
         '<select id="nsfw_preset_selector" class="nsfw-select"></select>' +
         '<div id="nsfw_preset_save_btn" class="menu_button menu_button_icon" title="保存当前预设"><i class="fa-solid fa-save"></i></div>' +
@@ -208,7 +212,7 @@ function buildPresetSectionHtml() {
         '<div id="nsfw_preset_new_btn" class="menu_button menu_button_icon" title="新建预设"><i class="fa-solid fa-plus"></i></div>' +
         '</div>' +
         '<div class="nsfw-preset-status" id="nsfw_switcher_preset_status">未导入预设</div>' +
-        '</div>';
+        '</div></div>';
 }
 
 /** 操作按钮区域 */
@@ -224,9 +228,10 @@ function buildActionButtonsHtml() {
 /** 运行日志区域 */
 function buildLogsSectionHtml() {
     return '<div class="nsfw-log-section">' +
-        '<div class="nsfw-log-header">' +
+        '<div class="nsfw-log-header" data-toggle="logs">' +
         '<div class="nsfw-section-title">' +
         '<i class="fa-solid fa-scroll"></i>运行日志</div>' +
+        '<div class="nsfw-log-header-right">' +
         '<div class="nsfw-log-toolbar">' +
         '<select id="nsfw_switcher_log_level_filter" class="nsfw-select">' +
         '<option value="debug">全部</option>' +
@@ -240,10 +245,13 @@ function buildLogsSectionHtml() {
         '<i class="fa-solid fa-copy"></i> 复制</button>' +
         '<button id="nsfw_switcher_export_logs_btn" class="nsfw-log-btn">' +
         '<i class="fa-solid fa-download"></i> 导出</button>' +
+        '</div>' +
+        '<i class="fa-solid fa-chevron-down nsfw-collapse-icon"></i>' +
         '</div></div>' +
+        '<div class="nsfw-log-content" style="display:none;">' +
         '<div class="nsfw-log-viewer" id="nsfw_switcher_logs">' +
         '<div class="nsfw-log-empty">暂无日志</div>' +
-        '</div></div>';
+        '</div></div></div>';
 }
 
 /** 组装完整设置面板 HTML */
@@ -274,6 +282,25 @@ function setupLogRendering() {
 }
 
 function bindSettingsListeners($panel) {
+    // 折叠/展开预设区域
+    $panel.on('click', '[data-toggle="preset"]', function (e) {
+        // 如果点击的是按钮，不触发折叠
+        if ($(e.target).closest('.menu_button').length) return;
+        var $content = $panel.find('.nsfw-preset-content');
+        var $icon = $(this).find('.nsfw-collapse-icon');
+        $content.slideToggle(200);
+        $icon.toggleClass('nsfw-expanded');
+    });
+
+    // 折叠/展开日志区域
+    $panel.on('click', '[data-toggle="logs"]', function (e) {
+        if ($(e.target).closest('.menu_button, .nsfw-log-btn, .nsfw-select').length) return;
+        var $content = $panel.find('.nsfw-log-content');
+        var $icon = $(this).find('.nsfw-collapse-icon');
+        $content.slideToggle(200);
+        $icon.toggleClass('nsfw-expanded');
+    });
+
     $panel.on('input change',
         '#nsfw_switcher_enabled, #nsfw_switcher_api_url, #nsfw_switcher_api_key, ' +
         '#nsfw_switcher_model_name, #nsfw_switcher_model_a, #nsfw_switcher_model_a_api_url, ' +
