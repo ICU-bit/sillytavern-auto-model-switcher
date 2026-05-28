@@ -2,8 +2,7 @@ console.log('NSFW_MODULE_LOADED');
 
 import { eventSource, event_types } from '../../../../script.js';
 import { extension_settings } from '../../../extensions.js';
-import { power_user } from '../../../../scripts/power-user.js';
-import { addLog, addDebugLog, clearLogs, setRenderCallback, renderLogsHtml, getLogs, copyLogsToClipboard, exportLogsAsJson, initLogs } from './src/logger.js';
+import { addLog, addDebugLog, clearLogs, setRenderCallback, renderLogsHtml, renderLogEntryHtml, getLogs, copyLogsToClipboard, exportLogsAsJson, initLogs } from './src/logger.js';
 import { EXTENSION_NAME, DEFAULT_SETTINGS, loadSettings, collectAndSaveFromDom, applySettingsToDom, updateStatusIndicator, getAllPresetNames, getActivePreset, getActivePresetName, savePresetAs, deletePreset, renamePreset, exportPreset } from './src/settings.js';
 import { createStateMachine } from './src/state.js';
 import { saveSettingsDebounced } from '../../../../script.js';
@@ -96,9 +95,7 @@ function buildDefaultEnabledModules(preset) {
             for (var pi = 0; pi < preset.prompts.length; pi++) enabled['prompt_' + pi] = true;
         } else if (m.fields) {
             for (var fi = 0; fi < m.fields.length; fi++) {
-                if (['always_force_name2', 'trim_sentences', 'single_line'].indexOf(m.fields[fi]) !== -1) {
-                    if (preset[m.fields[fi]] !== undefined) enabled[m.id + '_' + m.fields[fi]] = true;
-                } else if (preset[m.fields[fi]] !== undefined) enabled[m.id + '_' + m.fields[fi]] = true;
+                if (preset[m.fields[fi]] !== undefined) enabled[m.id + '_' + m.fields[fi]] = true;
             }
         }
     }
@@ -274,11 +271,26 @@ function createSettingsHtml() {
 }
 
 function setupLogRendering() {
-    setRenderCallback(function (logs) {
-        var minLevel = (extension_settings[EXTENSION_NAME] && extension_settings[EXTENSION_NAME].debugLevel) || 'debug';
+    setRenderCallback(function (logs, newLog) {
         var $c = $('#nsfw_switcher_logs');
-        if ($c.length) $c.html(renderLogsHtml(logs, minLevel));
+        if (!$c.length) return;
+        var minLevel = (extension_settings[EXTENSION_NAME] && extension_settings[EXTENSION_NAME].debugLevel) || 'info';
+        // 如果有新日志条目且级别足够，prepend 到顶部（避免全量重建）
+        if (newLog && shouldShowLog(newLog, minLevel)) {
+            $c.find('.nsfw-log-empty').remove();
+            $c.prepend(renderLogEntryHtml(newLog));
+            // 限制 DOM 中的条目数
+            while ($c.children().length > 200) $c.children().last().remove();
+        } else {
+            // 全量重建（初始化或级别过滤变更时）
+            $c.html(renderLogsHtml(logs, minLevel));
+        }
     });
+}
+
+function shouldShowLog(log, minLevel) {
+    var priority = { debug: 0, info: 1, warn: 2, error: 3 };
+    return (priority[log.level] || 0) >= (priority[minLevel] || 0);
 }
 
 function bindSettingsListeners($panel) {
@@ -373,8 +385,12 @@ function bindSettingsListeners($panel) {
         addLog('切换预设: ' + (name || '(无)'), 'info');
     });
 
-    var $presetFileInput = $('<input type="file" accept=".json" class="nsfw-hidden">');
-    $('body').append($presetFileInput);
+    // 检查是否已存在文件输入元素（防止热重载时重复创建）
+    var $presetFileInput = $('#nsfw_preset_file_input_dynamic');
+    if (!$presetFileInput.length) {
+        $presetFileInput = $('<input type="file" id="nsfw_preset_file_input_dynamic" accept=".json" class="nsfw-hidden">');
+        $('body').append($presetFileInput);
+    }
     $panel.on('click', '#nsfw_preset_import_btn', function () { $presetFileInput.click(); });
     $presetFileInput.on('change', function (e) {
         var file = e.target.files?.[0];
@@ -475,11 +491,18 @@ function bindSettingsListeners($panel) {
         var checked = $(this).prop('checked');
         var mods = extension_settings[EXTENSION_NAME].nsfwPresetModules || {};
         mods[mid] = checked;
-        // 同步该模块下所有字段
-        $panel.find('.nsfw-field-chk[data-field^="' + mid + '_"], .nsfw-field-chk[data-field^="prompt_"]').each(function () {
+        // 只同步该模块下所有字段（避免跨模块误选）
+        $panel.find('.nsfw-field-chk[data-field^="' + mid + '_"]').each(function () {
             $(this).prop('checked', checked);
             mods[$(this).data('field')] = checked;
         });
+        // prompts 模块特殊处理
+        if (mid === 'prompts') {
+            $panel.find('.nsfw-field-chk[data-field^="prompt_"]').each(function () {
+                $(this).prop('checked', checked);
+                mods[$(this).data('field')] = checked;
+            });
+        }
         extension_settings[EXTENSION_NAME].nsfwPresetModules = mods;
         saveSettingsDebounced();
     });

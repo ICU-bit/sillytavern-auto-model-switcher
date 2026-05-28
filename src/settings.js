@@ -55,12 +55,10 @@ export function loadSettings() {
     if (!stored) {
         // 首次运行，用默认值初始化
         extension_settings[EXTENSION_NAME] = { ...DEFAULT_SETTINGS };
-        addDebugLog('设置已加载: enabled=' + extension_settings[EXTENSION_NAME].enabled + ', debugMode=' + extension_settings[EXTENSION_NAME].debugMode);
         return { ...DEFAULT_SETTINGS };
     }
     // 合并默认值，确保新增字段也有默认值
     const merged = { ...DEFAULT_SETTINGS, ...stored };
-    addDebugLog('设置已加载: enabled=' + merged.enabled + ', debugMode=' + merged.debugMode);
     return merged;
 }
 

@@ -54,6 +54,13 @@ const TYPE_TO_LEVEL = {
 /** localStorage 持久化常量 */
 const STORAGE_KEY = 'nsfw_switcher_logs';
 
+// localStorage 写入防抖（避免高频写入）
+var saveTimeout = null;
+function debouncedSave() {
+    if (saveTimeout) clearTimeout(saveTimeout);
+    saveTimeout = setTimeout(function() { saveLogsToStorage(); }, 1000);
+}
+
 /**
  * 将日志保存到 localStorage
  */
@@ -132,7 +139,7 @@ export function addLog(message, type = 'info', level, data) {
         logs = logs.slice(0, 200);
     }
     
-    saveLogsToStorage();
+    debouncedSave();
     
     // 控制台输出
     const consoleMsg = `[NSFW模型切换器][${level.toUpperCase()}] ${message}`;
@@ -144,7 +151,7 @@ export function addLog(message, type = 'info', level, data) {
     }
     
     if (renderCallback) {
-        renderCallback(logs);
+        renderCallback(logs, logEntry);
     }
 }
 

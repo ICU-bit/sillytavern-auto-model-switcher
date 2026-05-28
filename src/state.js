@@ -31,7 +31,7 @@ import { addStateTransitionLog } from './logger.js';
  */
 
 /** 状态常量 */
-export const State = Object.freeze({
+var State = Object.freeze({
     /** 空闲状态，无待处理动作 */
     IDLE: 'idle',
     /** 待切换：下一次生成时切换到目标模型 */

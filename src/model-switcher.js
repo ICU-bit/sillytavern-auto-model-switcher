@@ -171,9 +171,8 @@ function restorePresets() {
 }
 
 /**
- * @deprecated Plan B (fetch 拦截) 已取代此函数。
- * 保留用于手动恢复按钮的兜底调用，以及向后兼容。
- * 主要切换逻辑见 src/direct-api.js。
+ * 获取当前模型信息
+ * @returns {{model: string, source: string} | null}
  */
 export async function switchToModel(targetModel, targetSource, targetApiUrl, targetApiKey) {
     if (!targetModel) {
