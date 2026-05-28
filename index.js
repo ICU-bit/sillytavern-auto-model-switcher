@@ -4,7 +4,7 @@ import { eventSource, event_types } from '../../../../script.js';
 import { extension_settings } from '../../../extensions.js';
 import { power_user } from '../../../../scripts/power-user.js';
 import { addLog, addDebugLog, clearLogs, setRenderCallback, renderLogsHtml, getLogs, copyLogsToClipboard, exportLogsAsJson, initLogs } from './src/logger.js';
-import { EXTENSION_NAME, DEFAULT_SETTINGS, loadSettings, collectAndSaveFromDom, applySettingsToDom, updateStatusIndicator } from './src/settings.js';
+import { EXTENSION_NAME, DEFAULT_SETTINGS, loadSettings, collectAndSaveFromDom, applySettingsToDom, updateStatusIndicator, getAllPresetNames, getActivePreset, getActivePresetName, savePresetAs, deletePreset, renamePreset, exportPreset } from './src/settings.js';
 import { createStateMachine } from './src/state.js';
 import { saveSettingsDebounced } from '../../../../script.js';
 import { detectNSFW, getLastAiMessageText, getMessageTextById, testNsfwApi } from './src/detector.js';
@@ -220,7 +220,22 @@ function createSettingsHtml() {
         '<div style="margin-bottom: 12px;"><label style="display: block; font-weight: 500; color: #555; margin-bottom: 5px; font-size: 13px;">目标模型API密钥</label><input type="password" id="nsfw_switcher_model_a_api_key" style="width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; box-sizing: border-box;" placeholder="sk-... (可选)"></div>' +
         '<div style="margin-bottom: 12px;"><label style="display: flex; align-items: center; gap: 8px; cursor: pointer;"><input type="checkbox" id="nsfw_switcher_show_notification" checked><span style="font-size: 13px;">显示切换通知</span></label></div>' +
         '<div style="margin-bottom: 12px;"><label style="display: flex; align-items: center; gap: 8px; cursor: pointer;"><input type="checkbox" id="nsfw_switcher_debug_mode"><span style="font-size: 13px;">调试模式（显示详细日志）</span></label></div><div style="margin-bottom: 12px;"><label style="display: block; font-weight: 500; color: #555; margin-bottom: 5px; font-size: 13px;">日志级别</label><select id="nsfw_switcher_debug_level" style="width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; box-sizing: border-box;"><option value="debug">Debug（详细调试）</option><option value="info" selected>Info（一般信息）</option><option value="warn">Warn（警告）</option><option value="error">Error（仅错误）</option></select></div></div>' +
-        '<div style="margin-bottom: 15px; padding: 12px; background: #f8f9fa; border-radius: 4px;"><div style="font-weight: 600; color: #333; margin-bottom: 10px;"><i class="fa-solid fa-file-import" style="margin-right: 8px;"></i>NSFW 预设（导入酒馆预设文件）</div><div style="margin-bottom: 8px; font-size: 12px; color: #666;">导入一个酒馆预设文件（OpenAI Settings / Instruct / Context / Sysprompt / Reasoning），切换 NSFW 模型时自动应用。</div><div style="display: flex; gap: 8px; align-items: center;"><button id="nsfw_switcher_import_preset_btn" style="flex: 1; padding: 8px 12px; border: none; border-radius: 4px; font-size: 12px; font-weight: 500; cursor: pointer; background: #667eea; color: white;"><i class="fa-solid fa-upload"></i> 导入预设</button><button id="nsfw_switcher_remove_preset_btn" style="padding: 8px 12px; border: none; border-radius: 4px; font-size: 12px; cursor: pointer; background: #e74c3c; color: white;"><i class="fa-solid fa-trash"></i> 移除</button></div><div id="nsfw_switcher_preset_status" style="margin-top: 8px; font-size: 12px; color: #888;">未导入预设</div></div>' +
+        '<div style="margin-bottom: 15px; padding: 12px; background: #f8f9fa; border-radius: 4px;">' +
+        '<div class="title_restorable standoutHeader" style="margin-bottom: 10px;">' +
+        '<div style="font-weight: 600; color: #333;"><i class="fa-solid fa-file-import" style="margin-right: 8px;"></i>NSFW 预设</div>' +
+        '<div class="flex-container alignItemsCenter">' +
+        '<div id="nsfw_preset_import_btn" class="menu_button menu_button_icon" title="导入预设"><i class="fa-solid fa-file-import"></i></div>' +
+        '<div id="nsfw_preset_export_btn" class="menu_button menu_button_icon" title="导出预设"><i class="fa-solid fa-file-export"></i></div>' +
+        '<div id="nsfw_preset_delete_btn" class="menu_button menu_button_icon" title="删除预设"><i class="fa-solid fa-trash"></i></div>' +
+        '</div></div>' +
+        '<div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">' +
+        '<select id="nsfw_preset_selector" style="flex: 1; padding: 6px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; background: white;"></select>' +
+        '<div id="nsfw_preset_save_btn" class="menu_button menu_button_icon" title="保存当前预设"><i class="fa-solid fa-save"></i></div>' +
+        '<div id="nsfw_preset_rename_btn" class="menu_button menu_button_icon" title="重命名预设"><i class="fa-solid fa-pen"></i></div>' +
+        '<div id="nsfw_preset_new_btn" class="menu_button menu_button_icon" title="新建预设"><i class="fa-solid fa-plus"></i></div>' +
+        '</div>' +
+        '<input type="file" hidden id="nsfw_preset_file_input" accept=".json">' +
+        '<div id="nsfw_switcher_preset_status" style="margin-top: 8px; font-size: 12px; color: #888;">未导入预设</div></div>' +
         '<div style="display: flex; gap: 10px; margin-bottom: 10px;"><button id="nsfw_switcher_test_btn" style="flex: 1; padding: 8px 12px; border: none; border-radius: 4px; font-size: 12px; font-weight: 500; cursor: pointer; background: #667eea; color: white;"><i class="fa-solid fa-play"></i> 测试API</button><button id="nsfw_switcher_restore_btn" style="flex: 1; padding: 8px 12px; border: none; border-radius: 4px; font-size: 12px; font-weight: 500; cursor: pointer; background: #e0e0e0; color: #555;"><i class="fa-solid fa-rotate-left"></i> 恢复原模型</button></div>' +
         '<div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #eee;"><div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;"><div style="font-weight: 600; color: #333;"><i class="fa-solid fa-scroll" style="margin-right: 8px;"></i>运行日志</div><div style="display: flex; gap: 6px; align-items: center;"><select id="nsfw_switcher_log_level_filter" style="padding: 2px 4px; border: 1px solid #ddd; border-radius: 3px; font-size: 11px; background: #f5f5f5; color: #666;"><option value="debug">全部</option><option value="info">Info+</option><option value="warn">Warn+</option><option value="error">仅Error</option></select><button id="nsfw_switcher_clear_logs_btn" style="padding: 4px 8px; border: none; border-radius: 3px; font-size: 11px; cursor: pointer; background: #f5f5f5; color: #666;"><i class="fa-solid fa-trash"></i> 清空</button><button id="nsfw_switcher_copy_logs_btn" style="padding: 4px 8px; border: none; border-radius: 3px; font-size: 11px; cursor: pointer; background: #f5f5f5; color: #666;"><i class="fa-solid fa-copy"></i> 复制</button><button id="nsfw_switcher_export_logs_btn" style="padding: 4px 8px; border: none; border-radius: 3px; font-size: 11px; cursor: pointer; background: #f5f5f5; color: #666;"><i class="fa-solid fa-download"></i> 导出</button></div></div><div id="nsfw_switcher_logs" style="max-height: 200px; overflow-y: auto; background: #fafafa; border-radius: 4px; padding: 10px; font-family: monospace;"><div style="color: #999; font-size: 12px; text-align: center;">暂无日志</div></div></div></div></div>';
 }
@@ -278,39 +293,127 @@ function bindSettingsListeners($panel) {
         addLog('日志已导出为JSON文件', 'success');
     });
 
-    var $fileInput = $('<input type="file" accept=".json" style="display:none">');
-    $('body').append($fileInput);
-    $panel.on('click', '#nsfw_switcher_import_preset_btn', function () { $fileInput.click(); });
-    $fileInput.on('change', function (e) {
+    // --- Preset Management ---
+    function refreshPresetDropdown($panel) {
+        var $sel = $panel.find('#nsfw_preset_selector');
+        var currentVal = extension_settings[EXTENSION_NAME].activePresetName || '';
+        $sel.empty().append('<option value="">-- 无预设 --</option>');
+        var names = getAllPresetNames();
+        for (var i = 0; i < names.length; i++) {
+            $sel.append('<option value="' + escapeHtml(names[i]) + '">' + escapeHtml(names[i]) + '</option>');
+        }
+        $sel.val(currentVal);
+        var active = getActivePreset();
+        if (active) {
+            $panel.find('#nsfw_switcher_preset_status').html(renderPresetModulesHtml(active.data, active.modules));
+        } else {
+            $panel.find('#nsfw_switcher_preset_status').text('未导入预设');
+        }
+    }
+
+    $panel.on('change', '#nsfw_preset_selector', function () {
+        var name = $(this).val();
+        extension_settings[EXTENSION_NAME].activePresetName = name;
+        saveSettingsDebounced();
+        refreshPresetDropdown($panel);
+        addLog('切换预设: ' + (name || '(无)'), 'info');
+    });
+
+    var $presetFileInput = $('<input type="file" accept=".json" style="display:none">');
+    $('body').append($presetFileInput);
+    $panel.on('click', '#nsfw_preset_import_btn', function () { $presetFileInput.click(); });
+    $presetFileInput.on('change', function (e) {
         var file = e.target.files?.[0];
         if (!file) return;
         var reader = new FileReader();
         reader.onload = function (ev) {
             try {
-                var data = JSON.parse(ev.target.result);
-                extension_settings[EXTENSION_NAME].nsfwPresetData = data;
-                extension_settings[EXTENSION_NAME].nsfwPresetModules = buildDefaultEnabledModules(data);
-                saveSettingsDebounced();
-                var name = data.name || data.display_name || file.name;
-                $panel.find('#nsfw_switcher_preset_status').html(renderPresetModulesHtml(data, buildDefaultEnabledModules(data)));
-                addLog('已导入预设: ' + name, 'success');
-                if (typeof toastr !== 'undefined') toastr.success('[NSFW 模型切换器] 已导入预设: ' + name);
+                var rawData = JSON.parse(ev.target.result);
+                var presetData, presetName, presetModules;
+                if (rawData.nsfwSwitcherPreset) {
+                    presetName = rawData.name;
+                    presetData = rawData.data;
+                    presetModules = rawData.modules;
+                } else {
+                    presetName = rawData.name || rawData.display_name || file.name.replace(/\.json$/i, '');
+                    presetData = rawData;
+                    presetModules = buildDefaultEnabledModules(rawData);
+                }
+                if (extension_settings[EXTENSION_NAME].nsfwPresets[presetName]) {
+                    var suffix = 1;
+                    var baseName = presetName;
+                    while (extension_settings[EXTENSION_NAME].nsfwPresets[presetName]) {
+                        presetName = baseName + ' (' + suffix + ')';
+                        suffix++;
+                    }
+                }
+                savePresetAs(presetName, presetData, presetModules);
+                refreshPresetDropdown($panel);
+                if (typeof toastr !== 'undefined') toastr.success('[NSFW 模型切换器] 已导入预设: ' + presetName);
             } catch (err) {
                 addLog('预设导入失败: ' + err.message, 'error');
-                if (typeof toastr !== 'undefined') toastr.error('预设文件解析失败，请确认是有效的 JSON 格式');
+                if (typeof toastr !== 'undefined') toastr.error('预设文件解析失败');
             }
         };
         reader.readAsText(file);
-        $fileInput.val('');
+        $presetFileInput.val('');
     });
-    $panel.on('click', '#nsfw_switcher_remove_preset_btn', function () {
-        extension_settings[EXTENSION_NAME].nsfwPresetData = null;
-        extension_settings[EXTENSION_NAME].nsfwPresetModules = null;
-        saveSettingsDebounced();
-        $panel.find('#nsfw_switcher_preset_status').text('未导入预设');
-        addLog('已移除 NSFW 预设', 'info');
-        if (typeof toastr !== 'undefined') toastr.info('[NSFW 模型切换器] 已移除 NSFW 预设');
+
+    $panel.on('click', '#nsfw_preset_export_btn', function () {
+        var name = getActivePresetName();
+        if (!name) { if (typeof toastr !== 'undefined') toastr.warning('请先选择一个预设'); return; }
+        exportPreset(name);
     });
+
+    $panel.on('click', '#nsfw_preset_delete_btn', function () {
+        var name = getActivePresetName();
+        if (!name) { if (typeof toastr !== 'undefined') toastr.warning('请先选择一个预设'); return; }
+        if (!confirm('确定删除预设 "' + name + '"？')) return;
+        deletePreset(name);
+        refreshPresetDropdown($panel);
+        if (typeof toastr !== 'undefined') toastr.info('[NSFW 模型切换器] 已删除预设: ' + name);
+    });
+
+    $panel.on('click', '#nsfw_preset_save_btn', function () {
+        var name = getActivePresetName();
+        if (!name) { if (typeof toastr !== 'undefined') toastr.warning('请先选择一个预设，或使用"另存为"'); return; }
+        var active = getActivePreset();
+        if (!active) return;
+        var mods = extension_settings[EXTENSION_NAME].nsfwPresetModules || active.modules;
+        savePresetAs(name, active.data, mods);
+        if (typeof toastr !== 'undefined') toastr.success('[NSFW 模型切换器] 已保存预设: ' + name);
+    });
+
+    $panel.on('click', '#nsfw_preset_rename_btn', function () {
+        var oldName = getActivePresetName();
+        if (!oldName) { if (typeof toastr !== 'undefined') toastr.warning('请先选择一个预设'); return; }
+        var newName = prompt('输入新名称:', oldName);
+        if (!newName || newName === oldName) return;
+        if (extension_settings[EXTENSION_NAME].nsfwPresets[newName]) {
+            if (typeof toastr !== 'undefined') toastr.error('预设名称 "' + newName + '" 已存在');
+            return;
+        }
+        renamePreset(oldName, newName);
+        refreshPresetDropdown($panel);
+        if (typeof toastr !== 'undefined') toastr.success('[NSFW 模型切换器] 已重命名: ' + oldName + ' → ' + newName);
+    });
+
+    $panel.on('click', '#nsfw_preset_new_btn', function () {
+        var name = prompt('输入预设名称:');
+        if (!name) return;
+        if (extension_settings[EXTENSION_NAME].nsfwPresets[name]) {
+            if (typeof toastr !== 'undefined') toastr.error('预设名称 "' + name + '" 已存在');
+            return;
+        }
+        var active = getActivePreset();
+        var data = active ? active.data : {};
+        var modules = active ? active.modules : {};
+        savePresetAs(name, data, modules);
+        refreshPresetDropdown($panel);
+        if (typeof toastr !== 'undefined') toastr.success('[NSFW 模型切换器] 已创建预设: ' + name);
+    });
+
+    refreshPresetDropdown($panel);
 
     // 预设模块开关（事件委托）
     $panel.on('change', '.nsfw-module-chk', function () {
@@ -435,9 +538,10 @@ async function onGenerationStarted(type, params, dryRun) {
     var action = state.getPendingAction();
     if (action === 'switch') {
         addLog('生成开始 → 启用拦截（上次回复为 NSFW）', 'info');
-        if (settings.nsfwPresetData) {
-            applyNsfwPresets(settings.nsfwPresetData);
-            var genParams = extractGenParams(settings.nsfwPresetData);
+        var activePreset = getActivePreset();
+        if (activePreset && activePreset.data) {
+            applyNsfwPresets(activePreset.data);
+            var genParams = extractGenParams(activePreset.data);
             if (genParams) {
                 Object.keys(genParams).forEach(function(key) {
                     if (key !== 'stream_openai') power_user[key] = genParams[key];
@@ -485,6 +589,21 @@ $(() => {
     initLogs();
     addLog('jQuery 就绪', 'info', 'debug');
     extension_settings[EXTENSION_NAME] = { ...DEFAULT_SETTINGS, ...extension_settings[EXTENSION_NAME] };
+
+    // Migrate legacy single-preset to multi-preset
+    (function() {
+        var settings = extension_settings[EXTENSION_NAME];
+        if (settings.nsfwPresetData && Object.keys(settings.nsfwPresets || {}).length === 0) {
+            var name = settings.nsfwPresetData.name || settings.nsfwPresetData.display_name || '默认预设';
+            settings.nsfwPresets = {};
+            settings.nsfwPresets[name] = {
+                data: settings.nsfwPresetData,
+                modules: settings.nsfwPresetModules || {},
+            };
+            settings.activePresetName = name;
+            saveSettingsDebounced();
+        }
+    })();
 
     state = createStateMachine();
     isReady = false;

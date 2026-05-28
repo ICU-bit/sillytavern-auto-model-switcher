@@ -39,6 +39,8 @@ export const DEFAULT_SETTINGS = {
     modelAApiUrl: '',
     modelAApiKey: '',
     nsfwPresetData: null,
+    nsfwPresets: {},
+    activePresetName: '',
     showNotification: true,
     debugMode: false,
     debugLevel: 'error',  // 'debug' | 'info' | 'warn' | 'error'
@@ -76,6 +78,8 @@ export function collectAndSaveFromDom($formContainer) {
         modelAApiUrl: $formContainer.find('#nsfw_switcher_model_a_api_url').val(),
         modelAApiKey: $formContainer.find('#nsfw_switcher_model_a_api_key').val(),
         nsfwPresetData: extension_settings[EXTENSION_NAME]?.nsfwPresetData || null,
+        nsfwPresets: extension_settings[EXTENSION_NAME]?.nsfwPresets || {},
+        activePresetName: extension_settings[EXTENSION_NAME]?.activePresetName || '',
         showNotification: $formContainer.find('#nsfw_switcher_show_notification').prop('checked'),
         debugMode: $formContainer.find('#nsfw_switcher_debug_mode').prop('checked'),
         debugLevel: $formContainer.find('#nsfw_switcher_debug_level').val() || 'info',
@@ -126,4 +130,79 @@ export function updateStatusIndicator(settings, $container) {
         $text.text('运行中');
         addLog('状态指示器更新: 运行中', 'info');
     }
+}
+
+export function getAllPresetNames() {
+    return Object.keys(extension_settings[EXTENSION_NAME].nsfwPresets || {});
+}
+
+export function getActivePreset() {
+    var settings = extension_settings[EXTENSION_NAME];
+    var name = settings.activePresetName;
+    if (name && settings.nsfwPresets && settings.nsfwPresets[name]) {
+        return settings.nsfwPresets[name];
+    }
+    return null;
+}
+
+export function getActivePresetName() {
+    return extension_settings[EXTENSION_NAME].activePresetName || '';
+}
+
+export function savePresetAs(name, data, modules) {
+    if (!name || !data) return;
+    extension_settings[EXTENSION_NAME].nsfwPresets[name] = {
+        data: data,
+        modules: modules || {},
+    };
+    extension_settings[EXTENSION_NAME].activePresetName = name;
+    saveSettingsDebounced();
+    addLog('已保存预设: ' + name, 'success');
+}
+
+export function deletePreset(name) {
+    var presets = extension_settings[EXTENSION_NAME].nsfwPresets;
+    if (!presets || !presets[name]) return;
+    delete presets[name];
+    if (extension_settings[EXTENSION_NAME].activePresetName === name) {
+        var remaining = Object.keys(presets);
+        extension_settings[EXTENSION_NAME].activePresetName = remaining.length > 0 ? remaining[0] : '';
+    }
+    saveSettingsDebounced();
+    addLog('已删除预设: ' + name, 'info');
+}
+
+export function renamePreset(oldName, newName) {
+    if (!oldName || !newName || oldName === newName) return;
+    var presets = extension_settings[EXTENSION_NAME].nsfwPresets;
+    if (!presets[oldName] || presets[newName]) return;
+    presets[newName] = presets[oldName];
+    delete presets[oldName];
+    if (extension_settings[EXTENSION_NAME].activePresetName === oldName) {
+        extension_settings[EXTENSION_NAME].activePresetName = newName;
+    }
+    saveSettingsDebounced();
+    addLog('已重命名预设: ' + oldName + ' → ' + newName, 'success');
+}
+
+export function exportPreset(name) {
+    var presets = extension_settings[EXTENSION_NAME].nsfwPresets;
+    if (!presets || !presets[name]) return;
+    var exportData = {
+        nsfwSwitcherPreset: true,
+        version: 1,
+        name: name,
+        data: presets[name].data,
+        modules: presets[name].modules,
+    };
+    var blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'nsfw-preset-' + name.replace(/[^a-zA-Z0-9\u4e00-\u9fff]/g, '_') + '.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    addLog('已导出预设: ' + name, 'success');
 }
