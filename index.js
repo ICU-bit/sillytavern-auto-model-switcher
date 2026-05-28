@@ -7,7 +7,7 @@ import { EXTENSION_NAME, DEFAULT_SETTINGS, loadSettings, collectAndSaveFromDom, 
 import { createStateMachine } from './src/state.js';
 import { saveSettingsDebounced } from '../../../../script.js';
 import { detectNSFW, getLastAiMessageText, getMessageTextById, testNsfwApi } from './src/detector.js';
-import { restoreOriginalModel, saveSettingsSnapshot, clearSettingsSnapshot } from './src/model-switcher.js';
+import { restoreOriginalModel, clearSettingsSnapshot } from './src/model-switcher.js';
 import { initFetchInterceptor, setInterceptEnabled, isInterceptEnabled, setOnRequestRedirected, setPresetOverrides } from './src/direct-api.js';
 import { initProxies, activateOverrides, deactivateOverrides, isOverridesActive } from './src/preset-proxy.js';
 
@@ -597,7 +597,7 @@ async function onMessageRendered(messageId, type) {
     var nsfwResult = await detectNSFW(content, detectionAbortController.signal);
     if (thisDetectionId !== currentDetectionId) return;
     if (nsfwResult === true) {
-        if (state.onNsfwDetected()) { addLog('检测结果: NSFW → 下次生成将切换模型', 'warning'); saveSettingsSnapshot(); }
+        if (state.onNsfwDetected()) addLog('检测结果: NSFW → 下次生成将切换模型', 'warning');
     } else if (nsfwResult === false) {
         if (state.onCleanDetected()) addLog('检测结果: 正常 → 下次生成将恢复原模型', 'info');
         else if (settings.debugMode) addDebugLog('检测结果: 正常，保持当前模型');

@@ -270,15 +270,24 @@ async function redirectToTarget(originalBody, originalOptions) {
 
         // 分类错误类型
         let errorMessage = e.message;
+        let errorCode = 'UNKNOWN';
         if (e.name === 'AbortError') {
-            errorMessage = '请求超时或被取消';
+            errorMessage = '请求超时或被取消 (15秒)';
+            errorCode = 'TIMEOUT';
         } else if (e.message.includes('Failed to fetch') || e.message.includes('NetworkError')) {
-            errorMessage = '网络连接失败';
+            errorMessage = '网络连接失败，请检查目标API地址是否正确';
+            errorCode = 'NETWORK';
+        } else if (e.message.includes('CORS')) {
+            errorMessage = '跨域请求被阻止，目标API可能不支持浏览器直接调用';
+            errorCode = 'CORS';
         }
 
+        addLog('直接API调用失败 [' + errorCode + ']: ' + errorMessage + ' (模型: ' + targetModel + ', 耗时: ' + duration + 'ms)', 'error');
         addApiErrorLog(targetUrl, {
             name: e.name,
             message: errorMessage,
+            code: errorCode,
+            targetModel: targetModel,
         }, duration);
         return null;
     }
