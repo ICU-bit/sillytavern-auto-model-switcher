@@ -24,6 +24,7 @@
 import { extension_settings } from '../../../../extensions.js';
 import { saveSettingsDebounced } from '../../../../../script.js';
 import { addLog, addDebugLog } from './logger.js';
+import { shareOrDownload } from './mobile.js';
 
 export const EXTENSION_NAME = 'nsfw-model-switcher';
 
@@ -191,14 +192,7 @@ export function exportPreset(name) {
         data: presets[name].data,
         modules: presets[name].modules,
     };
-    var blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement('a');
-    a.href = url;
-    a.download = 'nsfw-preset-' + name.replace(/[^a-zA-Z0-9\u4e00-\u9fff]/g, '_') + '.json';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    var filename = 'nsfw-preset-' + name.replace(/[^a-zA-Z0-9\u4e00-\u9fff]/g, '_') + '.json';
+    shareOrDownload(JSON.stringify(exportData, null, 2), filename, 'application/json');
     addLog('已导出预设: ' + name, 'success');
 }
