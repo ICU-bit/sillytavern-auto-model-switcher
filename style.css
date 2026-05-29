@@ -216,6 +216,36 @@
     transform: scale(0.97);
 }
 
+/* ============================================================
+   10a. Touch targets (WCAG 2.5.5 / Apple HIG — min 44px)
+   ============================================================ */
+
+.nsfw-btn {
+    min-height: 44px;
+}
+
+.nsfw-module-header {
+    min-height: 44px;
+}
+
+.nsfw-field-row {
+    min-height: 44px;
+}
+
+.nsfw-log-btn {
+    min-height: 44px;
+}
+
+.nsfw-checkbox-row {
+    min-height: 44px;
+    align-items: center;
+}
+
+.nsfw-input,
+.nsfw-select {
+    min-height: 44px;
+}
+
 .nsfw-btn-primary {
     background: var(--SmartThemeQuoteColor);
     color: var(--SmartThemeBodyColor);
@@ -714,4 +744,45 @@
     .nsfw-checkbox-row {
         font-size: calc(var(--mainFontSize) * 0.8);
     }
+}
+
+/* ============================================================
+   10b. Reduced motion support
+   ============================================================ */
+
+@media (prefers-reduced-motion: reduce) {
+    .nsfw-status-indicator {
+        animation: none;
+    }
+
+    .nsfw-collapse-icon {
+        transition: none;
+    }
+
+    .nsfw-btn {
+        transition: none;
+    }
+
+    .nsfw-input,
+    .nsfw-select,
+    .nsfw-editor textarea {
+        transition: none;
+    }
+
+    * {
+        animation-duration: 0.01ms !important;
+    }
+}
+
+/* JS-applied class hook for reduced motion */
+.nsfw-reduced-motion .nsfw-status-indicator {
+    animation: none;
+}
+
+.nsfw-reduced-motion .nsfw-collapse-icon {
+    transition: none;
+}
+
+.nsfw-reduced-motion .nsfw-btn {
+    transition: none;
 }
