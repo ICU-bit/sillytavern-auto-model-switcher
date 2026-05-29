@@ -10,6 +10,7 @@ import { detectNSFW, getLastAiMessageText, getMessageTextById, testNsfwApi } fro
 import { restoreOriginalModel, clearSettingsSnapshot } from './src/model-switcher.js';
 import { initFetchInterceptor, setInterceptEnabled, isInterceptEnabled, setOnRequestRedirected, setPresetOverrides } from './src/direct-api.js';
 import { initProxies, activateOverrides, deactivateOverrides, isOverridesActive } from './src/preset-proxy.js';
+import { isMobile, showPrompt, showConfirm, shareOrDownload, initAccordion, prefersReducedMotion } from './src/mobile.js';
 
 console.log('ALL_IMPORTS_OK');
 addLog('所有模块导入成功', 'info', 'debug');
@@ -345,17 +346,10 @@ function bindSettingsListeners($panel) {
     $panel.on('click', '#nsfw_switcher_copy_logs_btn', async function () {
         await copyLogsToClipboard('text');
     });
-    $panel.on('click', '#nsfw_switcher_export_logs_btn', function () {
+    $panel.on('click', '#nsfw_switcher_export_logs_btn', async function () {
         var jsonStr = exportLogsAsJson();
-        var blob = new Blob([jsonStr], { type: 'application/json' });
-        var url = URL.createObjectURL(blob);
-        var a = document.createElement('a');
-        a.href = url;
-        a.download = 'nsfw-switcher-logs-' + new Date().toISOString().replace(/[:.]/g, '-') + '.json';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+        var filename = 'nsfw-switcher-logs-' + new Date().toISOString().replace(/[:.]/g, '-') + '.json';
+        await shareOrDownload(jsonStr, filename, 'application/json');
         addLog('日志已导出为JSON文件', 'success');
     });
 
@@ -435,10 +429,10 @@ function bindSettingsListeners($panel) {
         exportPreset(name);
     });
 
-    $panel.on('click', '#nsfw_preset_delete_btn', function () {
+    $panel.on('click', '#nsfw_preset_delete_btn', async function () {
         var name = getActivePresetName();
         if (!name) { if (typeof toastr !== 'undefined') toastr.warning('请先选择一个预设'); return; }
-        if (!confirm('确定删除预设 "' + name + '"？')) return;
+        if (!await showConfirm('确定删除预设 "' + name + '"？')) return;
         deletePreset(name);
         refreshPresetDropdown($panel);
         if (typeof toastr !== 'undefined') toastr.info('[NSFW 模型切换器] 已删除预设: ' + name);
@@ -454,10 +448,10 @@ function bindSettingsListeners($panel) {
         if (typeof toastr !== 'undefined') toastr.success('[NSFW 模型切换器] 已保存预设: ' + name);
     });
 
-    $panel.on('click', '#nsfw_preset_rename_btn', function () {
+    $panel.on('click', '#nsfw_preset_rename_btn', async function () {
         var oldName = getActivePresetName();
         if (!oldName) { if (typeof toastr !== 'undefined') toastr.warning('请先选择一个预设'); return; }
-        var newName = prompt('输入新名称:', oldName);
+        var newName = await showPrompt('输入新名称:', oldName);
         if (!newName || newName === oldName) return;
         if (extension_settings[EXTENSION_NAME].nsfwPresets[newName]) {
             if (typeof toastr !== 'undefined') toastr.error('预设名称 "' + newName + '" 已存在');
@@ -468,8 +462,8 @@ function bindSettingsListeners($panel) {
         if (typeof toastr !== 'undefined') toastr.success('[NSFW 模型切换器] 已重命名: ' + oldName + ' → ' + newName);
     });
 
-    $panel.on('click', '#nsfw_preset_new_btn', function () {
-        var name = prompt('输入预设名称:');
+    $panel.on('click', '#nsfw_preset_new_btn', async function () {
+        var name = await showPrompt('输入预设名称:');
         if (!name) return;
         if (extension_settings[EXTENSION_NAME].nsfwPresets[name]) {
             if (typeof toastr !== 'undefined') toastr.error('预设名称 "' + name + '" 已存在');
@@ -484,6 +478,10 @@ function bindSettingsListeners($panel) {
     });
 
     refreshPresetDropdown($panel);
+
+    if (prefersReducedMotion()) {
+        $panel.addClass('nsfw-reduced-motion');
+    }
 
     // 预设模块开关（事件委托）
     $panel.on('change', '.nsfw-module-chk', function () {
