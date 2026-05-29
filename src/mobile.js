@@ -187,3 +187,42 @@ export function showConfirm(message) {
         overlay.appendChild(dialog);
     });
 }
+
+/**
+ * 移动端分享 / 桌面端下载
+ * 优先调用 navigator.share()（移动端），降级为 Blob + <a>.click() 下载
+ * @param {string} data - 要分享/下载的文本内容
+ * @param {string} filename - 下载文件名
+ * @param {string} mimeType - MIME 类型
+ * @returns {Promise<void>}
+ */
+export function shareOrDownload(data, filename, mimeType) {
+    if (navigator.share && isMobile()) {
+        var blob = new Blob([data], { type: mimeType });
+        var file = new File([blob], filename, { type: mimeType });
+        return navigator.share({
+            files: [file],
+            title: filename,
+        }).catch(function (err) {
+            if (err.name !== 'AbortError') {
+                fallbackDownload(data, filename, mimeType);
+            }
+        });
+    }
+    return fallbackDownload(data, filename, mimeType);
+}
+
+function fallbackDownload(data, filename, mimeType) {
+    return new Promise(function (resolve) {
+        var blob = new Blob([data], { type: mimeType });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        resolve();
+    });
+}
