@@ -366,6 +366,9 @@ function bindSettingsListeners($panel) {
         var active = getActivePreset();
         if (active) {
             $panel.find('#nsfw_switcher_preset_status').html(renderPresetModulesHtml(active.data, active.modules));
+            if (isMobile()) {
+                initAccordion('.nsfw-preset-modules');
+            }
         } else {
             $panel.find('#nsfw_switcher_preset_status').text('未导入预设');
         }
@@ -567,6 +570,9 @@ function bindSettingsListeners($panel) {
     var initialSettings = loadSettings();
     if (initialSettings.nsfwPresetData) {
         $panel.find('#nsfw_switcher_preset_status').html(renderPresetModulesHtml(initialSettings.nsfwPresetData, initialSettings.nsfwPresetModules));
+        if (isMobile()) {
+            initAccordion('.nsfw-preset-modules');
+        }
     }
 
     updateIndicator();
