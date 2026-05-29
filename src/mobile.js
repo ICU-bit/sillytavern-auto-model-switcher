@@ -226,3 +226,93 @@ function fallbackDownload(data, filename, mimeType) {
         resolve();
     });
 }
+
+/**
+ * 手风琴模式控制器
+ * 点击模块头展开当前模块，自动折叠其他模块
+ * @param {string} containerSelector - 容器 CSS 选择器
+ */
+export function initAccordion(containerSelector) {
+    var container = document.querySelector(containerSelector);
+    if (!container) return;
+
+    // Collapse all modules initially, keep first one open
+    var headers = container.querySelectorAll('.nsfw-module-header');
+    var currentModule = null;
+
+    for (var i = 0; i < headers.length; i++) {
+        var header = headers[i];
+        var moduleId = header.getAttribute('data-module');
+        if (!moduleId) continue;
+
+        // Initially collapse all except the first
+        if (i > 0) {
+            collapseModuleFields(container, moduleId);
+        } else {
+            currentModule = moduleId;
+        }
+
+        // Add click handler
+        header.addEventListener('click', function (e) {
+            // Don't trigger on checkbox click
+            if (e.target.tagName === 'INPUT') return;
+
+            var clickedModule = this.getAttribute('data-module');
+            if (!clickedModule) return;
+
+            // If clicking the already-open module, collapse it
+            if (currentModule === clickedModule) {
+                collapseModuleFields(container, clickedModule);
+                currentModule = null;
+                return;
+            }
+
+            // Collapse current, expand clicked
+            if (currentModule) {
+                collapseModuleFields(container, currentModule);
+            }
+            expandModuleFields(container, clickedModule);
+            currentModule = clickedModule;
+        });
+    }
+}
+
+function collapseModuleFields(container, moduleId) {
+    var rows = container.querySelectorAll('.nsfw-field-row[data-field^="' + moduleId + '_"]');
+    for (var i = 0; i < rows.length; i++) {
+        rows[i].style.display = 'none';
+    }
+    // Also collapse prompt_ rows if this is the prompts module
+    if (moduleId === 'prompts') {
+        var promptRows = container.querySelectorAll('.nsfw-field-row[data-field^="prompt_"]');
+        for (var j = 0; j < promptRows.length; j++) {
+            promptRows[j].style.display = 'none';
+        }
+    }
+    // Update header chevron
+    var header = container.querySelector('.nsfw-module-header[data-module="' + moduleId + '"]');
+    if (header) {
+        var chevron = header.querySelector('.nsfw-collapse-icon');
+        if (chevron) chevron.classList.remove('nsfw-expanded');
+    }
+}
+
+function expandModuleFields(container, moduleId) {
+    var rows = container.querySelectorAll('.nsfw-field-row[data-field^="' + moduleId + '_"]');
+    for (var i = 0; i < rows.length; i++) {
+        rows[i].style.display = '';
+    }
+    // Also expand prompt_ rows if this is the prompts module
+    if (moduleId === 'prompts') {
+        var promptRows = container.querySelectorAll('.nsfw-field-row[data-field^="prompt_"]');
+        for (var j = 0; j < promptRows.length; j++) {
+            promptRows[j].style.display = '';
+        }
+    }
+    // Update header chevron
+    var header = container.querySelector('.nsfw-module-header[data-module="' + moduleId + '"]');
+    if (header) {
+        var chevron = header.querySelector('.nsfw-collapse-icon');
+        if (chevron) chevron.classList.add('nsfw-expanded');
+    }
+}
