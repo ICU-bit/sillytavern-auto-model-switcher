@@ -572,21 +572,146 @@
 }
 
 /* ============================================================
-   10. 响应式 / 紧凑模式
+   10. 响应式 / 流式间距
    ============================================================ */
 
-@media (max-width: 480px) {
-    .nsfw-button-row {
-        flex-direction: column;
+/* 平板 + 横屏手机 (aligns with ST 1000px breakpoint) */
+@media (max-width: 1000px) {
+    .nsfw-preset-area {
+        padding: clamp(8px, 1.5vw, 12px);
     }
 
-    .nsfw-preset-selector-row {
+    .nsfw-preset-header {
         flex-wrap: wrap;
+        gap: 6px;
+    }
+
+    .nsfw-preset-header-right {
+        flex-wrap: wrap;
+    }
+
+    .nsfw-log-viewer {
+        max-height: clamp(150px, 30vh, 300px);
+    }
+
+    .nsfw-settings-section {
+        margin-bottom: clamp(10px, 1.8vw, 15px);
+        padding-bottom: clamp(10px, 1.8vw, 15px);
+    }
+
+    .nsfw-section-title {
+        margin-bottom: clamp(6px, 1vw, 8px);
+    }
+
+    .nsfw-status-bar {
+        gap: clamp(6px, 1vw, 8px);
+        margin-bottom: clamp(10px, 1.5vw, 15px);
+        padding: clamp(8px, 1.25vw, 10px) clamp(8px, 1.5vw, 12px);
+    }
+
+    .nsfw-button-row {
+        gap: clamp(6px, 1vw, 8px);
+    }
+
+    .nsfw-btn {
+        padding: clamp(6px, 1vw, 8px) clamp(8px, 1.5vw, 12px);
+    }
+}
+
+/* 小平板 (aligns with ST 768px breakpoint) */
+@media (max-width: 768px) {
+    .nsfw-field-row {
+        padding-left: clamp(16px, 3vw, 28px);
+    }
+
+    .nsfw-preset-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .nsfw-preset-header-right {
+        width: 100%;
+        justify-content: flex-end;
     }
 
     .nsfw-log-header {
         flex-direction: column;
         align-items: flex-start;
         gap: 6px;
+    }
+
+    .nsfw-log-header-right {
+        width: 100%;
+        flex-wrap: wrap;
+    }
+
+    .nsfw-log-toolbar {
+        flex-wrap: wrap;
+    }
+
+    .nsfw-module-header {
+        padding: clamp(6px, 1vw, 8px) clamp(8px, 1.25vw, 10px);
+    }
+
+    .nsfw-field-row {
+        padding: clamp(3px, 0.5vw, 4px) clamp(8px, 1.25vw, 10px) clamp(3px, 0.5vw, 4px) clamp(16px, 3vw, 28px);
+    }
+
+    .nsfw-editor {
+        padding-left: clamp(20px, 3.5vw, 32px);
+    }
+}
+
+/* 竖屏手机 (aligns with ST 450px breakpoint) */
+@media (max-width: 450px) {
+    #nsfw_switcher_panel .inline-drawer-content {
+        padding: clamp(6px, 1vw, 8px);
+    }
+
+    .nsfw-button-row {
+        flex-direction: column;
+    }
+
+    .nsfw-preset-selector-row {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .nsfw-preset-selector-row .nsfw-select {
+        width: 100%;
+    }
+
+    .nsfw-preset-actions {
+        justify-content: center;
+        flex-wrap: wrap;
+    }
+
+    .nsfw-log-toolbar {
+        width: 100%;
+        justify-content: space-between;
+    }
+
+    .nsfw-status-bar {
+        flex-wrap: wrap;
+        gap: 4px;
+    }
+
+    .nsfw-state-text {
+        width: 100%;
+        margin-left: 0;
+        text-align: right;
+    }
+
+    .nsfw-module-header {
+        font-size: calc(var(--mainFontSize) * 0.73);
+    }
+
+    .nsfw-field-key,
+    .nsfw-field-value {
+        font-size: calc(var(--mainFontSize) * 0.67);
+    }
+
+    .nsfw-checkbox-row {
+        font-size: calc(var(--mainFontSize) * 0.8);
     }
 }
