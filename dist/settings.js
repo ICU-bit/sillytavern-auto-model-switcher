@@ -15,19 +15,15 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-
 /**
  * NSFW 模型切换器 - 设置模块
  * 使用 SillyTavern 标准扩展设置 API
  */
-
 import { extension_settings } from '../../../../extensions.js';
 import { saveSettingsDebounced } from '../../../../../script.js';
 import { addLog, addDebugLog } from './logger.js';
 import { shareOrDownload } from './mobile.js';
-
 export const EXTENSION_NAME = 'nsfw-model-switcher';
-
 /**
  * 默认设置
  */
@@ -44,54 +40,54 @@ export const DEFAULT_SETTINGS = {
     activePresetName: '',
     showNotification: true,
     debugMode: false,
-    debugLevel: 'info',  // 'debug' | 'info' | 'warn' | 'error'
+    debugLevel: 'info',
 };
-
+/** 内部 helper: 类型转换访问 extension_settings */
+function getExtSettings() {
+    return extension_settings;
+}
 /**
  * 加载当前设置（合并默认值）
- * @returns {object}
  */
 export function loadSettings() {
-    const stored = extension_settings[EXTENSION_NAME];
+    const root = getExtSettings();
+    const stored = root[EXTENSION_NAME];
     if (!stored) {
         // 首次运行，用默认值初始化
-        extension_settings[EXTENSION_NAME] = { ...DEFAULT_SETTINGS };
+        root[EXTENSION_NAME] = { ...DEFAULT_SETTINGS };
         return { ...DEFAULT_SETTINGS };
     }
     // 合并默认值，确保新增字段也有默认值
     const merged = { ...DEFAULT_SETTINGS, ...stored };
     return merged;
 }
-
 /**
  * 从 DOM 表单收集设置值并保存
- * @param {JQuery} $formContainer - 包含设置表单元素的选择器
  */
 export function collectAndSaveFromDom($formContainer) {
-    extension_settings[EXTENSION_NAME] = {
+    const root = getExtSettings();
+    const current = root[EXTENSION_NAME];
+    root[EXTENSION_NAME] = {
         enabled: $formContainer.find('#nsfw_switcher_enabled').prop('checked'),
-        nsfwApiUrl: $formContainer.find('#nsfw_switcher_api_url').val(),
-        nsfwApiKey: $formContainer.find('#nsfw_switcher_api_key').val(),
-        nsfwModelName: $formContainer.find('#nsfw_switcher_model_name').val(),
-        modelA: $formContainer.find('#nsfw_switcher_model_a').val(),
-        modelAApiUrl: $formContainer.find('#nsfw_switcher_model_a_api_url').val(),
-        modelAApiKey: $formContainer.find('#nsfw_switcher_model_a_api_key').val(),
-        nsfwPresetData: extension_settings[EXTENSION_NAME]?.nsfwPresetData || null,
-        nsfwPresets: extension_settings[EXTENSION_NAME]?.nsfwPresets || {},
-        nsfwPresetModules: extension_settings[EXTENSION_NAME]?.nsfwPresetModules || {},
-        activePresetName: extension_settings[EXTENSION_NAME]?.activePresetName || '',
+        nsfwApiUrl: String($formContainer.find('#nsfw_switcher_api_url').val() ?? ''),
+        nsfwApiKey: String($formContainer.find('#nsfw_switcher_api_key').val() ?? ''),
+        nsfwModelName: String($formContainer.find('#nsfw_switcher_model_name').val() ?? ''),
+        modelA: String($formContainer.find('#nsfw_switcher_model_a').val() ?? ''),
+        modelAApiUrl: String($formContainer.find('#nsfw_switcher_model_a_api_url').val() ?? ''),
+        modelAApiKey: String($formContainer.find('#nsfw_switcher_model_a_api_key').val() ?? ''),
+        nsfwPresetData: current?.nsfwPresetData ?? null,
+        nsfwPresets: current?.nsfwPresets ?? {},
+        nsfwPresetModules: current?.nsfwPresetModules ?? {},
+        activePresetName: current?.activePresetName ?? '',
         showNotification: $formContainer.find('#nsfw_switcher_show_notification').prop('checked'),
         debugMode: $formContainer.find('#nsfw_switcher_debug_mode').prop('checked'),
-        debugLevel: $formContainer.find('#nsfw_switcher_debug_level').val() || 'info',
+        debugLevel: String($formContainer.find('#nsfw_switcher_debug_level').val() || 'info'),
     };
     addDebugLog('设置已从DOM收集并保存');
     saveSettingsDebounced();
 }
-
 /**
  * 将设置值同步到 DOM 表单元素
- * @param {object} settings - 设置对象
- * @param {JQuery} $formContainer - 包含设置表单元素的选择器
  */
 export function applySettingsToDom(settings, $formContainer) {
     $formContainer.find('#nsfw_switcher_enabled').prop('checked', settings.enabled);
@@ -107,92 +103,107 @@ export function applySettingsToDom(settings, $formContainer) {
     $formContainer.find('#nsfw_switcher_debug_level').val(settings.debugLevel || 'info');
     addDebugLog('设置已应用到DOM');
 }
-
 /**
  * 更新状态指示灯
- * @param {object} settings
- * @param {JQuery} $container
  */
 export function updateStatusIndicator(settings, $container) {
     const $indicator = $container.find('#nsfw_switcher_status_indicator');
     const $text = $container.find('#nsfw_switcher_status_text');
-
     if (!settings.enabled) {
         $indicator.attr('data-state', 'disabled');
         $text.text('已禁用');
-    } else if (!settings.nsfwApiUrl || !settings.modelA || !settings.modelAApiUrl) {
+    }
+    else if (!settings.nsfwApiUrl || !settings.modelA || !settings.modelAApiUrl) {
         $indicator.attr('data-state', 'incomplete');
         $text.text('配置不完整');
-    } else {
+    }
+    else {
         $indicator.attr('data-state', 'running');
         $text.text('运行中');
     }
 }
-
 export function getAllPresetNames() {
-    return Object.keys(extension_settings[EXTENSION_NAME].nsfwPresets || {});
+    const root = getExtSettings();
+    return Object.keys(root[EXTENSION_NAME]?.nsfwPresets || {});
 }
-
 export function getActivePreset() {
-    var settings = extension_settings[EXTENSION_NAME];
-    var name = settings.activePresetName;
+    const root = getExtSettings();
+    const settings = root[EXTENSION_NAME];
+    if (!settings)
+        return null;
+    const name = settings.activePresetName;
     if (name && settings.nsfwPresets && settings.nsfwPresets[name]) {
         return settings.nsfwPresets[name];
     }
     return null;
 }
-
 export function getActivePresetName() {
-    return extension_settings[EXTENSION_NAME].activePresetName || '';
+    const root = getExtSettings();
+    return root[EXTENSION_NAME]?.activePresetName || '';
 }
-
 export function savePresetAs(name, data, modules) {
-    if (!name || !data) return;
-    extension_settings[EXTENSION_NAME].nsfwPresets[name] = {
+    if (!name || !data)
+        return;
+    const root = getExtSettings();
+    const settings = root[EXTENSION_NAME];
+    if (!settings)
+        return;
+    settings.nsfwPresets[name] = {
         data: data,
         modules: modules || {},
     };
-    extension_settings[EXTENSION_NAME].activePresetName = name;
+    settings.activePresetName = name;
     saveSettingsDebounced();
     addLog('已保存预设: ' + name, 'success');
 }
-
 export function deletePreset(name) {
-    var presets = extension_settings[EXTENSION_NAME].nsfwPresets;
-    if (!presets || !presets[name]) return;
+    const root = getExtSettings();
+    const settings = root[EXTENSION_NAME];
+    if (!settings)
+        return;
+    const presets = settings.nsfwPresets;
+    if (!presets || !presets[name])
+        return;
     delete presets[name];
-    if (extension_settings[EXTENSION_NAME].activePresetName === name) {
-        var remaining = Object.keys(presets);
-        extension_settings[EXTENSION_NAME].activePresetName = remaining.length > 0 ? remaining[0] : '';
+    if (settings.activePresetName === name) {
+        const remaining = Object.keys(presets);
+        settings.activePresetName = remaining.length > 0 ? remaining[0] : '';
     }
     saveSettingsDebounced();
     addLog('已删除预设: ' + name, 'info');
 }
-
 export function renamePreset(oldName, newName) {
-    if (!oldName || !newName || oldName === newName) return;
-    var presets = extension_settings[EXTENSION_NAME].nsfwPresets;
-    if (!presets[oldName] || presets[newName]) return;
+    if (!oldName || !newName || oldName === newName)
+        return;
+    const root = getExtSettings();
+    const settings = root[EXTENSION_NAME];
+    if (!settings)
+        return;
+    const presets = settings.nsfwPresets;
+    if (!presets[oldName] || presets[newName])
+        return;
     presets[newName] = presets[oldName];
     delete presets[oldName];
-    if (extension_settings[EXTENSION_NAME].activePresetName === oldName) {
-        extension_settings[EXTENSION_NAME].activePresetName = newName;
+    if (settings.activePresetName === oldName) {
+        settings.activePresetName = newName;
     }
     saveSettingsDebounced();
     addLog('已重命名预设: ' + oldName + ' → ' + newName, 'success');
 }
-
 export function exportPreset(name) {
-    var presets = extension_settings[EXTENSION_NAME].nsfwPresets;
-    if (!presets || !presets[name]) return;
-    var exportData = {
+    const root = getExtSettings();
+    const presets = root[EXTENSION_NAME]?.nsfwPresets;
+    if (!presets || !presets[name])
+        return;
+    const exportData = {
         nsfwSwitcherPreset: true,
         version: 1,
         name: name,
         data: presets[name].data,
         modules: presets[name].modules,
     };
-    var filename = 'nsfw-preset-' + name.replace(/[^a-zA-Z0-9\u4e00-\u9fff]/g, '_') + '.json';
-    shareOrDownload(JSON.stringify(exportData, null, 2), filename, 'application/json');
+    const filename = 'nsfw-preset-' + name.replace(/[^a-zA-Z0-9\u4e00-\u9fff]/g, '_') + '.json';
+    void shareOrDownload(JSON.stringify(exportData, null, 2), filename, 'application/json');
     addLog('已导出预设: ' + name, 'success');
 }
+//# sourceMappingURL=settings.js.map
