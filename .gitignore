@@ -21,8 +21,10 @@ pnpm-debug.log*
 # TypeScript 构建缓存
 *.tsbuildinfo
 
-# 注意：dist/ 必须提交（SillyTavern 加载 dist/index.js）
-# 不要把 dist/ 加到此文件中
+# Phase 2 迁移期间临时忽略 dist/（ST 仍加载根 index.js）
+# Phase 2 结束（全部 9 文件迁移完成）后解除此忽略，提交完整 dist/
+# 并切换 manifest.json 指向 dist/index.js
+dist/
 
 # AI 工具配置
 .claude/
