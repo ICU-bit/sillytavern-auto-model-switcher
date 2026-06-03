@@ -49,10 +49,16 @@ interface ChatRequestBody {
 // ===== 模块状态 =====
 
 // ST 的聊天补全 API 端点路径特征
+// 修复: 原 '/api/openai/' 为前缀子串匹配, 会误伤
+// /api/openai/caption-image, /api/openai/generate-voice, /api/openai/generate-image 等
+// 非聊天补全端点。这些请求体没有 messages 字段, 走到 fallback 报警告日志。
+//
+// ST 前端实际只用 /api/backends/chat-completions/generate 一个端点。
+// 保留 /api/chat/completions 以兼容用户自定义代理或其他扩展。
+// 移除 /api/openai/ 前缀通配 (它从来就是误伤源, 不是真正的聊天端点)。
 const ST_API_PATTERNS: string[] = [
     '/api/backends/chat-completions/generate',
     '/api/chat/completions',
-    '/api/openai/',
 ];
 
 let originalFetch: typeof window.fetch | null = null;
