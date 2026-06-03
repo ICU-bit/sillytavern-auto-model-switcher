@@ -669,6 +669,22 @@ async function onMessageRendered(messageId: number, type?: string): Promise<void
     const nsfwResult = await detectNSFW(content, detectionAbortController.signal);
     if (thisDetectionId !== currentDetectionId) return;
     if (nsfwResult === true) {
+        // Phase 4 Batch B Step 7 (BUG-1 修复):
+        // 检测到 NSFW 时, 先 prepare 让 coordinator 缓存最新预设。
+        // - 若状态从 IDLE → PENDING_SWITCH: 数据等下次 generation 启用时用
+        // - 若状态从 PENDING_RESTORE → SWITCHED: handleTransition 触发 tryEnable,
+        //   用刚 prepare 的最新数据自动 re-enable (BUG-1 自动修复)
+        const activePresetForNsfw = getActivePreset();
+        if (activePresetForNsfw && activePresetForNsfw.data) {
+            const root = getSettingsRoot();
+            const mods: PresetModuleEnabledMap = root.nsfwPresetModules || {};
+            const genParams = extractGenParams(activePresetForNsfw.data);
+            coordinator.prepare({
+                presetData: activePresetForNsfw.data,
+                mods,
+                genParams,
+            });
+        }
         if (state.onNsfwDetected()) addLog('检测结果: NSFW → 下次生成将切换模型', 'warning');
     } else if (nsfwResult === false) {
         if (state.onCleanDetected()) addLog('检测结果: 正常 → 下次生成将恢复原模型', 'info');
@@ -685,23 +701,30 @@ async function onGenerationStarted(_type?: string, _params?: unknown, dryRun?: b
     const settings = loadSettings();
     if (!settings.enabled) return;
     const action = state.getPendingAction();
+
+    // Phase 4 Batch B Step 7: 接管 switch / restore 路径
+    // 旧实现: 同步三连调用 activate/setIntercept/setPresetOverrides + state.onXxxApplied
+    // 新实现: prepare(overrides) → state.onSwitchApplied 触发 transition →
+    //          coordinator.handleTransition 自动 enable; restore 同理走 IDLE 自动 disable
     if (action === 'switch') {
         addLog('生成开始 → 启用拦截（上次回复为 NSFW）', 'info');
         const activePreset = getActivePreset();
         if (activePreset && activePreset.data) {
             const root = getSettingsRoot();
             const mods: PresetModuleEnabledMap = root.nsfwPresetModules || {};
-            activateOverrides(activePreset.data, mods);
             const genParams = extractGenParams(activePreset.data);
-            setPresetOverrides(genParams);
+            // 先 prepare, 让 state 转换 hook 触发 enable 时能用
+            coordinator.prepare({
+                presetData: activePreset.data,
+                mods,
+                genParams,
+            });
         }
-        setInterceptEnabled(true);
+        // state 转换驱动副作用 (PENDING_SWITCH → SWITCHED → handleTransition → tryEnable)
         state.onSwitchApplied();
     } else if (action === 'restore') {
         addLog('生成开始 → 禁用拦截（上次回复正常）', 'info');
-        setInterceptEnabled(false);
-        deactivateOverrides();
-        setPresetOverrides(null);
+        // state 转换驱动副作用 (PENDING_RESTORE → IDLE → handleTransition → applyDisable)
         state.onRestoreApplied();
     } else {
         if (settings.debugMode) addDebugLog('生成开始 → 无需操作');
