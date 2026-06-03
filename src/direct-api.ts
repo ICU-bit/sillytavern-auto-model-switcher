@@ -67,6 +67,22 @@ let onRequestRedirected: OnRequestRedirected | null = null;
 let presetOverrides: PresetOverrides = null;
 
 /**
+ * Path E 兜底回调 (Phase 4 Batch B Step 8)
+ *
+ * 飞行中的请求若发现 plugin 已被用户关闭, 优先调用此回调让协调器走
+ * disable('fetch_fallback') 路径 (清理 Proxy + presetOverrides),
+ * 而不是直接改 private interceptEnabled。
+ *
+ * 未注册时保留旧行为 (直改 interceptEnabled, 不联动其他层)。
+ */
+type FetchFallbackCallback = () => void;
+let onFetchFallback: FetchFallbackCallback | null = null;
+
+export function setOnFetchFallback(callback: FetchFallbackCallback | null): void {
+    onFetchFallback = callback;
+}
+
+/**
  * 初始化 fetch 拦截器（在插件加载时调用一次）
  * 用包装函数替换 window.fetch，实现请求拦截
  */
@@ -81,9 +97,20 @@ export function initFetchInterceptor(): void {
 
         if (interceptEnabled && isStApiEndpoint(url)) {
             // 安全兜底：如果插件已被用户关闭，自动禁用拦截
+            // Phase 4 Batch B Step 8: 优先通知协调器统一关闭三层 + state
             const currentSettings = loadSettings();
             if (!currentSettings.enabled) {
-                interceptEnabled = false;
+                if (onFetchFallback) {
+                    try {
+                        onFetchFallback();
+                    } catch (e) {
+                        const msg = e instanceof Error ? e.message : String(e);
+                        addLog('fetch fallback 回调抛错: ' + msg, 'error');
+                        interceptEnabled = false;  // 兜底直改
+                    }
+                } else {
+                    interceptEnabled = false;  // 未注册回调时走旧行为
+                }
                 return originalFetch!(input, init);
             }
 

@@ -41,7 +41,7 @@
 
 import { ModelStateMachine, State, type TransitionContext } from './state.js';
 import { activateOverrides, deactivateOverrides, setOnSafetyTimeout } from './preset-proxy.js';
-import { setInterceptEnabled, setPresetOverrides } from './direct-api.js';
+import { setInterceptEnabled, setPresetOverrides, setOnFetchFallback } from './direct-api.js';
 import { addLog, addDebugLog } from './logger.js';
 import type { PresetData, PresetModuleEnabledMap } from './settings.js';
 
@@ -115,7 +115,10 @@ export class SwitcherCoordinator {
         // Step 4: 接管 Path F (30s safety timeout)
         setOnSafetyTimeout(() => this.disable('safety_timeout'));
 
-        addDebugLog('SwitcherCoordinator attached to state machine + safety timeout');
+        // Step 8: 接管 Path E (fetch wrapper 兜底)
+        setOnFetchFallback(() => this.disable('fetch_fallback'));
+
+        addDebugLog('SwitcherCoordinator attached: state transitions + safety timeout + fetch fallback');
     }
 
     /** 解除订阅 (供测试和热重载) */
@@ -125,6 +128,7 @@ export class SwitcherCoordinator {
             this.unsubscribe = null;
         }
         setOnSafetyTimeout(null);
+        setOnFetchFallback(null);
     }
 
     /**

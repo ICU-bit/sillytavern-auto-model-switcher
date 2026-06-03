@@ -44,6 +44,10 @@ let originalFetch = null;
 let interceptEnabled = false;
 let onRequestRedirected = null;
 let presetOverrides = null;
+let onFetchFallback = null;
+export function setOnFetchFallback(callback) {
+    onFetchFallback = callback;
+}
 /**
  * 初始化 fetch 拦截器（在插件加载时调用一次）
  * 用包装函数替换 window.fetch，实现请求拦截
@@ -57,9 +61,22 @@ export function initFetchInterceptor() {
         const url = normalizeInputUrl(input);
         if (interceptEnabled && isStApiEndpoint(url)) {
             // 安全兜底：如果插件已被用户关闭，自动禁用拦截
+            // Phase 4 Batch B Step 8: 优先通知协调器统一关闭三层 + state
             const currentSettings = loadSettings();
             if (!currentSettings.enabled) {
-                interceptEnabled = false;
+                if (onFetchFallback) {
+                    try {
+                        onFetchFallback();
+                    }
+                    catch (e) {
+                        const msg = e instanceof Error ? e.message : String(e);
+                        addLog('fetch fallback 回调抛错: ' + msg, 'error');
+                        interceptEnabled = false; // 兜底直改
+                    }
+                }
+                else {
+                    interceptEnabled = false; // 未注册回调时走旧行为
+                }
                 return originalFetch(input, init);
             }
             const options = init || {};

@@ -8,7 +8,7 @@ import { createCoordinator } from './coordinator.js';
 import { detectNSFW, getLastAiMessageText, getMessageTextById, testNsfwApi } from './detector.js';
 import { restoreOriginalModel, clearSettingsSnapshot } from './model-switcher.js';
 import { initFetchInterceptor, isInterceptEnabled, setOnRequestRedirected } from './direct-api.js';
-import { initProxies, deactivateOverrides } from './preset-proxy.js';
+import { initProxies } from './preset-proxy.js';
 import { isMobile, showPrompt, showConfirm, shareOrDownload, initAccordion, prefersReducedMotion } from './mobile.js';
 console.log('ALL_IMPORTS_OK');
 addLog('所有模块导入成功', 'info', 'debug');
@@ -791,9 +791,12 @@ $(() => {
     detectionAbortController = null;
     initProxies();
     initFetchInterceptor();
-    setOnRequestRedirected(function () { deactivateOverrides(); });
-    // Phase 4 Batch B Step 3: attach coordinator (订阅 state.onTransition)
-    // 此时尚未接管任何路径, 仅观察状态转换。后续 Step 4-8 逐条接管。
+    // Phase 4 Batch B Step 8: 接管 Path A (fetch 重定向回调)
+    // 旧实现: 直接调 deactivateOverrides(), 关 Proxy 但留 fetch 拦截
+    // 新实现: coordinator.onPayloadCaptured() 走 'switched' → 'partial' 状态转换
+    //          仍保留 fetch 应对 streaming reconnect / function-call 后续请求
+    setOnRequestRedirected(() => coordinator.onPayloadCaptured());
+    // attach coordinator (订阅 state.onTransition + safety timeout)
     coordinator.attach();
     const $panel = $('<div id="nsfw_switcher_panel">' + createSettingsHtml() + '</div>').appendTo('#extensions_settings');
     bindSettingsListeners($panel);
