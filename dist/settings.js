@@ -36,6 +36,7 @@ export const DEFAULT_SETTINGS = {
     modelAApiUrl: '',
     modelAApiKey: '',
     nsfwPresetData: null,
+    nsfwPresetModules: {}, // 显式默认空字典, 避免运行时 || {} 兜底
     nsfwPresets: {},
     activePresetName: '',
     showNotification: true,
