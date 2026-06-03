@@ -93,6 +93,27 @@ const NSFW_PROXY_MARKER = '__nsfw_proxy_installed__';
 // 安全超时时间（毫秒）
 const SAFETY_TIMEOUT_MS = 30000;
 
+/**
+ * Safety timeout 触发时的外部回调 (Phase 4 Batch B Step 4)
+ *
+ * 当 30s 内 Proxy 未被正常停用时, safetyTimer 触发会:
+ * 1. 调用此回调 (若已注册) → 让 SwitcherCoordinator 走 disable('safety_timeout')
+ *    路径, 同时关 fetch + 通知 state
+ * 2. 然后才调用本地 deactivateOverrides 兜底
+ *
+ * 调用方 (coordinator) 通过 setOnSafetyTimeout() 注册。
+ * 未注册时保持旧行为 (只关 Proxy, 不联动 fetch/state)。
+ */
+type SafetyTimeoutCallback = () => void;
+let onSafetyTimeout: SafetyTimeoutCallback | null = null;
+
+/**
+ * 注册 safety timeout 回调 (供 SwitcherCoordinator 注入)
+ */
+export function setOnSafetyTimeout(callback: SafetyTimeoutCallback | null): void {
+    onSafetyTimeout = callback;
+}
+
 // ===== Proxy 创建 =====
 
 /**
@@ -349,7 +370,20 @@ function startSafetyTimer(): void {
     proxyState.safetyTimer = setTimeout(function () {
         if (proxyState.active) {
             addLog('安全超时：预设覆盖超过 ' + (SAFETY_TIMEOUT_MS / 1000) + ' 秒未停用，自动恢复', 'warning');
-            deactivateOverrides();
+            // Phase 4 Batch B Step 4: 优先通知 coordinator (会同时关 fetch + state)
+            // 若未注册回调, 走旧行为 (只关 Proxy)
+            if (onSafetyTimeout) {
+                try {
+                    onSafetyTimeout();
+                } catch (e) {
+                    const msg = e instanceof Error ? e.message : String(e);
+                    addLog('safety timeout 回调抛错: ' + msg, 'error');
+                    // 即使回调失败也要兜底关 Proxy
+                    deactivateOverrides();
+                }
+            } else {
+                deactivateOverrides();
+            }
         }
     }, SAFETY_TIMEOUT_MS);
 }

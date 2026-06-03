@@ -38,7 +38,7 @@
  * - getRuntimeState():  暴露 discriminated union 状态供 UI/调试
  */
 import { State } from './state.js';
-import { activateOverrides, deactivateOverrides } from './preset-proxy.js';
+import { activateOverrides, deactivateOverrides, setOnSafetyTimeout } from './preset-proxy.js';
 import { setInterceptEnabled, setPresetOverrides } from './direct-api.js';
 import { addLog, addDebugLog } from './logger.js';
 // ===== Coordinator =====
@@ -63,14 +63,16 @@ export class SwitcherCoordinator {
         this.state = state;
     }
     /**
-     * 订阅状态机转换事件, 启动自动驱动。
+     * 订阅状态机转换事件 + preset-proxy 的 safety timeout, 启动自动驱动。
      * 应在插件初始化时调用一次。
      */
     attach() {
         if (this.unsubscribe)
             return; // 幂等
         this.unsubscribe = this.state.onTransition((ctx) => this.handleTransition(ctx));
-        addDebugLog('SwitcherCoordinator attached to state machine');
+        // Step 4: 接管 Path F (30s safety timeout)
+        setOnSafetyTimeout(() => this.disable('safety_timeout'));
+        addDebugLog('SwitcherCoordinator attached to state machine + safety timeout');
     }
     /** 解除订阅 (供测试和热重载) */
     dispose() {
@@ -78,6 +80,7 @@ export class SwitcherCoordinator {
             this.unsubscribe();
             this.unsubscribe = null;
         }
+        setOnSafetyTimeout(null);
     }
     /**
      * 暴露运行时状态 (UI/调试)

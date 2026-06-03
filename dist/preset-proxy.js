@@ -52,6 +52,13 @@ const CONTEXT_GLOBAL_KEYS = ['always_force_name2', 'trim_sentences', 'single_lin
 const NSFW_PROXY_MARKER = '__nsfw_proxy_installed__';
 // 安全超时时间（毫秒）
 const SAFETY_TIMEOUT_MS = 30000;
+let onSafetyTimeout = null;
+/**
+ * 注册 safety timeout 回调 (供 SwitcherCoordinator 注入)
+ */
+export function setOnSafetyTimeout(callback) {
+    onSafetyTimeout = callback;
+}
 // ===== Proxy 创建 =====
 /**
  * 为 power_user 的子对象创建 Proxy
@@ -277,7 +284,22 @@ function startSafetyTimer() {
     proxyState.safetyTimer = setTimeout(function () {
         if (proxyState.active) {
             addLog('安全超时：预设覆盖超过 ' + (SAFETY_TIMEOUT_MS / 1000) + ' 秒未停用，自动恢复', 'warning');
-            deactivateOverrides();
+            // Phase 4 Batch B Step 4: 优先通知 coordinator (会同时关 fetch + state)
+            // 若未注册回调, 走旧行为 (只关 Proxy)
+            if (onSafetyTimeout) {
+                try {
+                    onSafetyTimeout();
+                }
+                catch (e) {
+                    const msg = e instanceof Error ? e.message : String(e);
+                    addLog('safety timeout 回调抛错: ' + msg, 'error');
+                    // 即使回调失败也要兜底关 Proxy
+                    deactivateOverrides();
+                }
+            }
+            else {
+                deactivateOverrides();
+            }
         }
     }, SAFETY_TIMEOUT_MS);
 }
