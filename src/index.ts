@@ -354,10 +354,13 @@ function bindSettingsListeners($panel: JQuery<HTMLElement>): void {
         await testNsfwApi();
     });
     $panel.on('click', '#nsfw_switcher_restore_btn', async function () {
-        setInterceptEnabled(false);
-        deactivateOverrides();
-        setPresetOverrides(null);
+        // Phase 4 Batch B Step 5: 接管 Path C (manual restore)
+        // 先转换 state, 让 coordinator 自动 disable (订阅 IDLE 进入)
+        // 这里 state.onManualRestore 触发 transition → handleTransition →
+        //     runtime.kind !== 'idle' 时 applyDisable() 关三层
+        // 若 state 已是 IDLE (协调器未激活), 也 fallback 调 disable('manual') 保证幂等
         state.onManualRestore();
+        coordinator.disable('manual');  // 幂等, 兜底关闭
         await restoreOriginalModel();
         clearSettingsSnapshot();
         addLog('手动恢复: 将使用原始模型生成', 'success');
