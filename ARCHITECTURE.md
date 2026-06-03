@@ -2,13 +2,18 @@
 
 > **项目名称**: sillytavern-auto-model-switcher
 >
-> **版本**: 0.1.2
+> **版本**: 1.1.0
 >
 > **描述**: SillyTavern 扩展插件，在 AI 回复完成后自动检测 NSFW 内容，并根据检测结果在下次生成时切换至预设模型。
 >
-> **技术栈**: JavaScript (ES Module)、jQuery、SillyTavern Extension API
+> **技术栈**: **TypeScript 5.6** (strict 模式) → 编译为 ES Module、jQuery、SillyTavern Extension API
 >
 > **仓库**: https://github.com/ICU-bit/sillytavern-auto-model-switcher
+>
+> **分支说明**:
+> - `master` — 生产版（旧 JS 实现）
+> - `dev` — 旧开发版（旧 JS 实现）
+> - `refactor` — **当前重构分支（TS + 构建型）**，运行时入口为 `dist/index.js`
 
 ---
 
@@ -37,41 +42,69 @@
 | 依赖 | 说明 |
 |---|---|
 | SillyTavern | 任何支持扩展的版本（2024+） |
-| Node.js | SillyTavern 运行所需（≥18.x） |
+| Node.js | **≥18.x**（用于本地 TS 编译，不强制要求 ST 用户安装） |
+| npm | 随 Node 自带 |
 | 浏览器 | Chrome/Firefox/Edge（用于调试） |
 
-### 1.2 克隆与安装
+> **对最终用户**：只需 clone 仓库即可，`dist/` 编译产物已入 git，无需 Node。
+>
+> **对开发者**：需要 Node + npm，用于编辑 `.ts` 源码并重新编译。
+
+### 1.2 普通用户安装（无需 Node）
 
 ```bash
 # 1. 进入 SillyTavern 的 third-party 扩展目录
 cd /path/to/SillyTavern/public/scripts/extensions/third-party/
 
-# 2. 克隆仓库
+# 2. 克隆仓库（dist/ 已包含编译产物）
 git clone https://github.com/ICU-bit/sillytavern-auto-model-switcher.git
 
-# 3. 重启 SillyTavern，插件会自动加载
+# 3. 重启 SillyTavern，插件会自动加载 dist/index.js
 ```
 
 查看加载是否成功：打开 SillyTavern → 右侧扩展面板 → 应该看到"NSFW模型切换器"折叠面板。
 
-### 1.3 开发环境搭建
+### 1.3 开发者环境搭建（含 TS 编译）
 
 ```bash
-# 推荐：在仓库目录和安装目录之间建立链接
-# 这样在仓库中修改代码，安装目录自动同步
-# Windows (管理员 PowerShell)：
-cmd /c mklink /D "C:\path\to\SillyTavern\public\scripts\extensions\third-party\sillytavern-auto-model-switcher" "C:\path\to\repo\sillytavern-auto-model-switcher"
+# 1. 克隆仓库
+git clone -b refactor https://github.com/ICU-bit/sillytavern-auto-model-switcher.git
+cd sillytavern-auto-model-switcher
+
+# 2. 安装开发依赖（TypeScript + @types/jquery）
+npm install
+
+# 3. 启动 watch 模式（保存 .ts 后自动重编译到 dist/）
+npm run dev
+
+# 或单次编译
+npm run build
+
+# 仅类型检查（不输出文件）
+npm run check
 ```
 
-### 1.4 开发工作流
+**Windows junction 链接调试模式**（推荐）：
+```powershell
+# 在 ST 目录创建 junction 指向 worktree（管理员 PowerShell）
+cmd /c mklink /J "E:\ST\projects\SillyTavern\public\scripts\extensions\third-party\sillytavern-auto-model-switcher" "C:\path\to\repo"
+# 之后编辑 src/*.ts → npm run dev 自动重编译 → ST 浏览器 Ctrl+F5 立即生效
+```
+
+### 1.4 开发工作流（TS）
 
 ```
-修改代码 → 刷新浏览器页面(F5) → 查看效果 → 检查日志
-                ↓
-         没有生效？→ 检查控制台报错 → 修复 → 重试
+编辑 src/*.ts → tsc watch 自动编译到 dist/ → 浏览器 Ctrl+F5 → 查看效果 → 检查日志
+                       ↓
+                类型错误？→ tsc 报错（终端可见）→ 修复 → 自动重试
+                       ↓
+                运行错误？→ 浏览器控制台报错（source map 指向 .ts 行号）→ 修复
 ```
 
-**重要**: SillyTavern 扩展是 ES Module，浏览器会缓存模块。每次修改代码后必须**硬刷新**（`Ctrl+F5`或`Ctrl+Shift+R`）清除缓存。
+**关键约束**：
+- SillyTavern 加载的是 `dist/index.js`，**永远不要手动编辑 dist/ 下的文件**——下次 `npm run dev` 会覆盖
+- 提交时 **必须同时提交 `src/*.ts` 和 `dist/*.js`**（dist 是产物，但社区约定需入 git 让普通用户开箱即用）
+- ES Module 浏览器缓存：每次修改后必须**硬刷新**（`Ctrl+F5` 或 `Ctrl+Shift+R`）
 
 ### 1.5 首次运行检查清单
 
@@ -95,15 +128,29 @@ cmd /c mklink /D "C:\path\to\SillyTavern\public\scripts\extensions\third-party\s
 ```
 sillytavern-auto-model-switcher/
 │
-├── index.js                    ← 入口控制器（插件加载起点）
-├── manifest.json               ← ST 扩展声明文件
+├── manifest.json               ← ST 扩展声明文件 (js: "dist/index.js")
 │
-├── src/
-│   ├── model-switcher.js       ← 模型切换器（oai_settings 快照管理）
-│   ├── detector.js             ← NSFW 检测器（API 调用）
-│   ├── state.js                ← 状态机（切换生命周期管理）
-│   ├── settings.js             ← 设置管理器（持久化存储）
-│   └── logger.js               ← 日志模块（收集与渲染）
+├── src/                        ← TypeScript 源码（开发者编辑）
+│   ├── index.ts                ← 入口控制器（插件加载起点，~770 行）
+│   ├── direct-api.ts           ← 【Plan B 核心】fetch 拦截器
+│   ├── preset-proxy.ts         ← 【偷天换日】ES6 Proxy 包装 power_user
+│   ├── model-switcher.ts       ← 模型切换器（oai_settings 快照管理，残余 Plan A）
+│   ├── detector.ts             ← NSFW 检测器（API 调用）
+│   ├── state.ts                ← 状态机（4 状态有限状态机）
+│   ├── settings.ts             ← 设置管理器（多预设 CRUD + DOM 绑定）
+│   ├── logger.ts               ← 日志模块（4 级日志 + localStorage + 渲染回调）
+│   └── mobile.ts               ← 模态框 + 平台工具集（命名遗留）
+│
+├── types/                      ← TypeScript 全局类型声明
+│   └── sillytavern.d.ts        ← ST API 类型（oai_settings, power_user, eventSource 等）
+│
+├── dist/                       ← 编译产物（ST 实际加载，入 git 让用户开箱即用）
+│   ├── index.js + index.js.map
+│   ├── (8 个其他模块 .js + .map)
+│
+├── package.json                ← npm 配置（TS 5.6 + @types/jquery）
+├── tsconfig.json               ← TS 编译配置（strict: true, ES2022）
+├── style.css                   ← UI 样式
 │
 ├── ARCHITECTURE.md             ← 本文件
 ├── TODO.md                     ← 待开发功能记录
@@ -113,24 +160,32 @@ sillytavern-auto-model-switcher/
 
 ### 2.2 组件总览
 
-| 组件 | 文件名 | 类型 | 行数 | 核心功能 |
+> 下表中文件名为 **源码名**（`.ts`）。运行时对应 `dist/<同名>.js`。
+
+| 组件 | 源文件 | 类型 | 行数 | 核心功能 |
 |---|---|---|---|---|
-| 入口控制器 | `index.js` | 入口/编排 | ~417 | 初始化插件、注册事件、编排子模块 |
-| 模型切换器 | `src/model-switcher.js` | 核心业务 | ~304 | oai_settings 快照管理、模型切换与恢复 |
-| NSFW 检测器 | `src/detector.js` | 核心业务 | ~165 | 调用外部 API 对文本进行 NSFW 分类 |
-| 状态机 | `src/state.js` | 核心业务 | ~166 | 有限状态机管理切换生命周期 |
-| 设置管理器 | `src/settings.js` | 工具层 | ~106 | 扩展设置存取、DOM 双向绑定 |
-| 日志模块 | `src/logger.js` | 工具层 | ~77 | 运行日志收集、存储和 UI 渲染 |
+| 入口控制器 | `src/index.ts` | 入口/编排 | ~770 | 初始化插件、HTML 模板、事件绑定、子模块编排 |
+| fetch 拦截器 | `src/direct-api.ts` | 核心业务 | ~330 | Plan B：拦截 ST API 请求重定向到目标模型 |
+| 预设代理 | `src/preset-proxy.ts` | 核心业务 | ~380 | ES6 Proxy 包装 power_user，激活时返回 NSFW 预设 |
+| 模型切换器 | `src/model-switcher.ts` | 核心业务（Plan A 残余） | ~375 | oai_settings 快照管理、手动恢复使用 |
+| NSFW 检测器 | `src/detector.ts` | 核心业务 | ~235 | 调用外部 API 对文本进行 NSFW 分类 |
+| 状态机 | `src/state.ts` | 核心业务 | ~215 | 4 状态 FSM 管理切换生命周期 |
+| 设置管理器 | `src/settings.ts` | 工具层 | ~270 | 扩展设置存取、多预设 CRUD、DOM 双向绑定 |
+| 日志模块 | `src/logger.ts` | 工具层 | ~395 | 4 级日志收集、localStorage 持久化、UI 渲染 |
+| 平台工具集 | `src/mobile.ts` | 工具层 | ~355 | 自定义模态框、移动端检测、分享/下载 |
 
 ### 2.3 文件依赖关系
 
 ```
-index.js                    ← 入口，依赖所有子模块
-├── src/logger.js           ← 无依赖（纯工具）
-├── src/settings.js         ← 依赖 SillyTavern: extensions.js（extension_settings）、script.js（saveSettingsDebounced）
-├── src/state.js            ← 无依赖（纯业务逻辑）
-├── src/detector.js         ← 依赖 logger、settings、SillyTavern: extensions.js（getContext）
-└── src/model-switcher.js   ← 依赖 logger、settings、SillyTavern: script.js、openai.js（oai_settings）、power-user.js（power_user）
+src/index.ts                    ← 入口，依赖所有子模块
+├── src/logger.ts               ← 无业务依赖（纯工具）
+├── src/mobile.ts               ← 依赖 SillyTavern: extensions.js（getContext）
+├── src/settings.ts             ← 依赖 logger, mobile, SillyTavern: extensions.js（extension_settings）+ script.js（saveSettingsDebounced）
+├── src/state.ts                ← 依赖 logger（addStateTransitionLog）
+├── src/detector.ts             ← 依赖 logger, settings, SillyTavern: extensions.js（getContext）
+├── src/model-switcher.ts       ← 依赖 logger, settings, SillyTavern: script.js, openai.js（oai_settings）, power-user.js（power_user）
+├── src/preset-proxy.ts         ← 依赖 logger, SillyTavern: power-user.js（power_user）
+└── src/direct-api.ts           ← 依赖 logger, settings
 ```
 
 ### 2.4 数据流全景
@@ -198,9 +253,10 @@ SillyTavern 扩展的加载顺序：
     "loading_order": 100,                      // 加载顺序（100=较晚加载）
     "requires": [],                            // 依赖的其他扩展
     "optional": [],                            // 可选依赖
-    "js": "index.js",                          // 入口 JS 文件
+    "js": "dist/index.js",                     // 入口 JS（TS 编译产物）
+    "css": "style.css",
     "author": "ICU-bit",
-    "version": "0.1.0",
+    "version": "1.1.0",
     "homePage": "https://github.com/ICU-bit/..."
 }
 ```
@@ -209,15 +265,17 @@ SillyTavern 扩展的加载顺序：
 
 ### 3.3 导入路径规则
 
-插件安装在 `<ST>/public/scripts/extensions/third-party/<插件名>/` 下，导入路径相对于此：
+插件源码在 `src/` 下（编译后落在 `dist/`），从该位置导入 ST 核心模块的相对路径：
 
 | 目标模块 | 路径 | 说明 |
 |---|---|---|
-| `script.js` | `../../../../script.js` | ST 主模块 |
-| `extensions.js` | `../../../extensions.js` | 扩展工具模块 |
-| `openai.js` | `../../../../scripts/openai.js` | OpenAI API 设置 |
-| `power-user.js` | `../../../../scripts/power-user.js` | 用户设置（预设） |
-| 同目录文件 | `./src/xxx.js` | 自己的子模块 |
+| `script.js` | `../../../../../script.js` | ST 主模块（5 层上） |
+| `extensions.js` | `../../../../extensions.js` | 扩展工具模块（4 层上） |
+| `openai.js` | `../../../../../scripts/openai.js` | OpenAI API 设置 |
+| `power-user.js` | `../../../../../scripts/power-user.js` | 用户设置（预设） |
+| 同目录文件 | `./xxx.js` | 自己的子模块（**TS 中也写 `.js` 扩展名**，由 tsc 解析） |
+
+> **重要**：源码用 `.ts` 写，但 `import` 时模块路径要写 `.js`（ESM 规范 + tsconfig 的 `Bundler` resolution）。例如 `import { addLog } from './logger.js';` 在 `logger.ts` 存在时也是正确的。
 
 ### 3.4 核心 API 速查
 
@@ -1277,6 +1335,44 @@ SillyTavern 的 API Key 由 `secrets.js` 系统管理（写入 `secrets.json`）
 ### 11.5 为什么检测 prompt 使用中文？
 
 因为大多数用户使用中文，且轻量级检测模型在中文场景下更稳定。支持中英文结果解析（是/否/1/0/true/false/yes/no）。
+
+### 11.6 为什么 refactor 分支引入 TypeScript？
+
+**背景**：master/dev 分支是纯 JS（ES Module），ARCHITECTURE.md 之前的"无构建步骤"原则在重构前 OK。但重构需要：
+1. 大规模改动 9 个模块的接口
+2. 拆分 700+ 行的 index.ts
+3. 修复 15 个已识别 bug，其中部分涉及类型混淆（如 legacy `nsfwPresetData` 与新 `nsfwPresets[name].data` 混用）
+
+**TS 提供的保护**：
+- 编译时捕获 type mismatch（手工 JS 改动几乎必出现）
+- 重构时 `lsp_find_references` 类型感知（JS LSP 只能基于猜测）
+- `tsc --noEmit` 通过 = 至少类型层面无 regression
+
+**为什么是构建型而非 JSDoc**：
+- JSDoc 表达 `Proxy<T>` / 复杂泛型 / 条件类型 极其啰嗦
+- 重构后 index.ts 拆 4 个模块、引入新接口，JSDoc 维护成本高
+- 社区已有先例（[Anima-Memory-System](https://github.com/topics/sillytavern-extension)、ST-Prompt-Template、JS-Slash-Runner 均为 TS 构建型）
+
+**dist/ 入 git 的取舍**：
+- ❌ 不入：用户必须装 Node + npm run build，不友好
+- ✅ 入：用户开箱即用；只是开发者在改 `.ts` 时需要同时提交 `dist/`
+- 社区惯例选 ✅
+
+**与"无构建步骤"原则的兼容**：
+- AGENTS.md 中的原则适用于 master/dev 分支（用户场景）
+- refactor 分支为开发者场景独立约定，不修改 master/dev 的规则
+- 普通用户（不编辑代码）实际感受不到差异
+
+### 11.7 为什么 TS 严格模式选 `strict: true`？
+
+**背景**：迁移目标是为重构提供保护，宽松模式（`strict: false`）允许隐式 any，等于没保护。
+
+**风险评估**：
+- ✅ 迁移代价：~50 处类型断言（多数是 `extension_settings[EXTENSION_NAME]` 这类 ST 动态字段）
+- ✅ 收益：所有 `'foo' in obj`、`obj.maybe?.value` 模式都强制守护
+- ✅ 重构期间 `lsp_diagnostics` 实时报错
+
+**实际成本**：Phase 2 迁移每个文件平均 5-10 处类型断言，可控。
 
 ---
 
