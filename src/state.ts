@@ -67,12 +67,6 @@ export class ModelStateMachine {
         return this._state === State.SWITCHED;
     }
 
-    /** 是否有待处理的动作 */
-    get hasPendingAction(): boolean {
-        return this._state === State.PENDING_SWITCH
-            || this._state === State.PENDING_RESTORE;
-    }
-
     /** 是否有待切换动作 */
     get shouldSwitch(): boolean {
         return this._state === State.PENDING_SWITCH;
@@ -175,6 +169,10 @@ export class ModelStateMachine {
 
     /**
      * 操作失败时回退到空闲状态
+     *
+     * 当前未被调用 (codegraph 验证), 为 Phase 4 Batch B 协调器预留:
+     * 在 activateOverrides / setInterceptEnabled 等副作用执行失败时
+     * 由 SwitcherCoordinator 主动调用以保持状态机一致。
      */
     onOperationAborted(): void {
         if (this._state === State.PENDING_SWITCH || this._state === State.PENDING_RESTORE) {
