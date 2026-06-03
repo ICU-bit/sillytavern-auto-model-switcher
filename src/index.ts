@@ -5,6 +5,7 @@ import { extension_settings } from '../../../../extensions.js';
 import { addLog, addDebugLog, clearLogs, setRenderCallback, renderLogsHtml, renderLogEntryHtml, getLogs, copyLogsToClipboard, exportLogsAsJson, initLogs, type LogEntry, type LogLevelName } from './logger.js';
 import { EXTENSION_NAME, DEFAULT_SETTINGS, loadSettings, collectAndSaveFromDom, applySettingsToDom, updateStatusIndicator, getAllPresetNames, getActivePreset, getActivePresetName, savePresetAs, deletePreset, renamePreset, exportPreset, type NsfwSwitcherSettings, type PresetData, type PresetModuleEnabledMap } from './settings.js';
 import { createStateMachine, type ModelStateMachine } from './state.js';
+import { createCoordinator, type SwitcherCoordinator } from './coordinator.js';
 import { detectNSFW, getLastAiMessageText, getMessageTextById, testNsfwApi } from './detector.js';
 import { restoreOriginalModel, clearSettingsSnapshot } from './model-switcher.js';
 import { initFetchInterceptor, setInterceptEnabled, isInterceptEnabled, setOnRequestRedirected, setPresetOverrides } from './direct-api.js';
@@ -27,6 +28,7 @@ interface PresetModuleDef {
 // ===== 模块级状态 =====
 
 let state: ModelStateMachine;
+let coordinator: SwitcherCoordinator;
 let isReady: boolean = false;
 let currentDetectionId: number = 0;
 let detectionAbortController: AbortController | null = null;
@@ -744,6 +746,7 @@ $(() => {
     })();
 
     state = createStateMachine();
+    coordinator = createCoordinator(state);
     isReady = false;
     currentDetectionId = 0;
     detectionAbortController = null;
@@ -751,6 +754,10 @@ $(() => {
     initProxies();
     initFetchInterceptor();
     setOnRequestRedirected(function () { deactivateOverrides(); });
+
+    // Phase 4 Batch B Step 3: attach coordinator (订阅 state.onTransition)
+    // 此时尚未接管任何路径, 仅观察状态转换。后续 Step 4-8 逐条接管。
+    coordinator.attach();
 
 
     const $panel = $('<div id="nsfw_switcher_panel">' + createSettingsHtml() + '</div>').appendTo('#extensions_settings');

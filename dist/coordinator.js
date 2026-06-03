@@ -191,7 +191,9 @@ export class SwitcherCoordinator {
             return;
         // idle → switched: 需要 lastPrepared 数据
         if (!this.lastPrepared) {
-            addLog('协调器: 状态进入 SWITCHED 但无预备数据, 跳过 enable (调用方应先调 prepare)', 'warning');
+            // 仅 debug: Phase 4 Batch B 渐进式接管期间, 路径未接管时这里会触发但无副作用
+            // 后续 Step 4 之后此分支正常情况下不会进入
+            addDebugLog('协调器: 状态进入 SWITCHED 但无预备数据, 跳过 enable');
             return;
         }
         const applied = this.lastPrepared;
