@@ -319,9 +319,14 @@ function bindSettingsListeners($panel) {
         '#nsfw_switcher_model_a_api_key, ' +
         '#nsfw_switcher_show_notification, #nsfw_switcher_debug_mode, #nsfw_switcher_debug_level', function () {
         collectAndSaveFromDom($panel);
-        var s = loadSettings();
-        if (!s.enabled && isInterceptEnabled())
-            setInterceptEnabled(false);
+        const s = loadSettings();
+        // Phase 4 Batch B Step 6: 接管 Path D (plugin off)
+        // 旧实现: 只关 fetch, 不动 Proxy/state → BUG-3 (30s 后才兜底)
+        // 新实现: coordinator.disable('plugin_off') 同时关 fetch + Proxy + 
+        //          presetOverrides + 通知 state 回 IDLE
+        if (!s.enabled && coordinator.isActive()) {
+            coordinator.disable('plugin_off');
+        }
         updateIndicator();
     });
     $panel.on('click', '#nsfw_switcher_test_btn', async function () {
