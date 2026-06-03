@@ -27,6 +27,12 @@
  *   SWITCHED ──(检测到正常内容)──→ PENDING_RESTORE
  *   PENDING_RESTORE ──(生成开始已恢复)──→ IDLE
  *   (任何状态) ──(手动恢复)──→ IDLE
+ *
+ * Phase 4 Batch B (Step 1):
+ *   状态机引入 onTransition hook, 允许 SwitcherCoordinator 订阅状态变更,
+ *   自动驱动 fetch 拦截/Proxy 激活的 enable/disable。
+ *   所有内部状态变更现在统一通过 private transition() 调用, 保证所有路径
+ *   都会触发 hook。
  */
 
 import { addStateTransitionLog } from './logger.js';
@@ -49,12 +55,36 @@ export type StateName = typeof State[keyof typeof State];
 /** getPendingAction 返回值 */
 export type PendingAction = 'switch' | 'restore' | 'none';
 
+/**
+ * 状态转换上下文 (传给 onTransition 订阅者)
+ *
+ * - `from` / `to`: 转换的起止状态
+ * - `reason`: 触发转换的语义原因 (日志 + Coordinator 决策依据)
+ */
+export interface TransitionContext {
+    from: StateName;
+    to: StateName;
+    reason: string;
+}
+
+/** onTransition 订阅者回调签名 */
+export type TransitionListener = (ctx: TransitionContext) => void;
+
 export class ModelStateMachine {
     /** 当前状态 */
     private _state: StateName = State.IDLE;
 
+    /** transition 订阅者列表 */
+    private _listeners: TransitionListener[] = [];
+
     /** 当前状态 */
     get state(): StateName { return this._state; }
+
+    /**
+     * 字面量类型 getter (Oracle 建议: 避免暴露 string)
+     * 返回与 State 常量等价的字面量联合, 调用方可安全 switch。
+     */
+    getStatus(): StateName { return this._state; }
 
     /** 当前是否处于「已切换」相关状态 */
     get isSwitchedOrPending(): boolean {
@@ -78,6 +108,47 @@ export class ModelStateMachine {
     }
 
     /**
+     * 注册状态转换订阅者
+     *
+     * 订阅者在每次成功的状态转换后被同步调用 (无状态变化时不触发)。
+     * Hook 内抛错会被 catch 并降级 (Oracle 建议: 避免污染 FSM)。
+     *
+     * @returns 取消订阅的函数
+     */
+    onTransition(listener: TransitionListener): () => void {
+        this._listeners.push(listener);
+        return () => {
+            const idx = this._listeners.indexOf(listener);
+            if (idx !== -1) this._listeners.splice(idx, 1);
+        };
+    }
+
+    /**
+     * 统一的状态转换入口 (内部使用)
+     *
+     * - 记录日志
+     * - 同步通知所有订阅者
+     * - 订阅者抛错时 try/catch + console.error, 不影响 FSM 自身
+     */
+    private transition(next: StateName, reason: string): void {
+        const from = this._state;
+        if (from === next) return;
+        this._state = next;
+        addStateTransitionLog(from, next, reason);
+
+        // 通知订阅者
+        const ctx: TransitionContext = { from, to: next, reason };
+        for (let i = 0; i < this._listeners.length; i++) {
+            try {
+                this._listeners[i](ctx);
+            } catch (e) {
+                const msg = e instanceof Error ? e.stack || e.message : String(e);
+                console.error('[NSFW模型切换器] onTransition listener threw:', msg);
+            }
+        }
+    }
+
+    /**
      * 只读检查：当前状态需要生成时执行什么动作
      */
     getPendingAction(): PendingAction {
@@ -92,15 +163,11 @@ export class ModelStateMachine {
      */
     onNsfwDetected(): boolean {
         if (this._state === State.IDLE) {
-            const oldState = this._state;
-            this._state = State.PENDING_SWITCH;
-            addStateTransitionLog(oldState, this._state, '检测到NSFW内容');
+            this.transition(State.PENDING_SWITCH, '检测到NSFW内容');
             return true;
         }
         if (this._state === State.PENDING_RESTORE) {
-            const oldState = this._state;
-            this._state = State.SWITCHED;
-            addStateTransitionLog(oldState, this._state, '恢复期间再次检测到NSFW，取消恢复');
+            this.transition(State.SWITCHED, '恢复期间再次检测到NSFW，取消恢复');
             return true;
         }
         // 已切换状态或待切换状态：保持不变
@@ -113,15 +180,12 @@ export class ModelStateMachine {
      */
     onCleanDetected(): boolean {
         if (this._state === State.SWITCHED || this._state === State.PENDING_RESTORE) {
-            const oldState = this._state;
-            this._state = State.PENDING_RESTORE;
-            addStateTransitionLog(oldState, this._state, '检测到正常内容，准备恢复');
+            // PENDING_RESTORE 是 no-op (相同状态, transition 内部短路)
+            this.transition(State.PENDING_RESTORE, '检测到正常内容，准备恢复');
             return true;
         }
         if (this._state === State.PENDING_SWITCH) {
-            const oldState = this._state;
-            this._state = State.IDLE;
-            addStateTransitionLog(oldState, this._state, '切换期间检测到正常内容，取消切换');
+            this.transition(State.IDLE, '切换期间检测到正常内容，取消切换');
             return true;
         }
         return false;
@@ -133,9 +197,7 @@ export class ModelStateMachine {
      */
     onDetectionFailed(): boolean {
         if (this._state === State.SWITCHED) {
-            const oldState = this._state;
-            this._state = State.PENDING_RESTORE;
-            addStateTransitionLog(oldState, this._state, '检测失败，准备恢复原模型');
+            this.transition(State.PENDING_RESTORE, '检测失败，准备恢复原模型');
             return true;
         }
         return false;
@@ -146,9 +208,7 @@ export class ModelStateMachine {
      */
     onSwitchApplied(): boolean {
         if (this._state === State.PENDING_SWITCH) {
-            const oldState = this._state;
-            this._state = State.SWITCHED;
-            addStateTransitionLog(oldState, this._state, '切换操作已执行');
+            this.transition(State.SWITCHED, '切换操作已执行');
             return true;
         }
         return false;
@@ -159,9 +219,7 @@ export class ModelStateMachine {
      */
     onRestoreApplied(): boolean {
         if (this._state === State.PENDING_RESTORE) {
-            const oldState = this._state;
-            this._state = State.IDLE;
-            addStateTransitionLog(oldState, this._state, '恢复操作已执行');
+            this.transition(State.IDLE, '恢复操作已执行');
             return true;
         }
         return false;
@@ -170,15 +228,12 @@ export class ModelStateMachine {
     /**
      * 操作失败时回退到空闲状态
      *
-     * 当前未被调用 (codegraph 验证), 为 Phase 4 Batch B 协调器预留:
-     * 在 activateOverrides / setInterceptEnabled 等副作用执行失败时
-     * 由 SwitcherCoordinator 主动调用以保持状态机一致。
+     * 为 SwitcherCoordinator 预留: safety_timeout / plugin_off 等异常路径
+     * 由协调器主动调用以保持状态机一致 (Oracle 建议)。
      */
     onOperationAborted(): void {
         if (this._state === State.PENDING_SWITCH || this._state === State.PENDING_RESTORE) {
-            const oldState = this._state;
-            this._state = State.IDLE;
-            addStateTransitionLog(oldState, this._state, '操作失败，回退到空闲');
+            this.transition(State.IDLE, '操作失败，回退到空闲');
         }
     }
 
@@ -186,9 +241,10 @@ export class ModelStateMachine {
      * 手动恢复了模型 → 回到空闲
      */
     onManualRestore(): void {
-        const oldState = this._state;
-        this._state = State.IDLE;
-        addStateTransitionLog(oldState, this._state, '手动恢复');
+        // 即使当前已 IDLE 也走 transition (内部短路), 保证日志一致
+        if (this._state !== State.IDLE) {
+            this.transition(State.IDLE, '手动恢复');
+        }
     }
 
     /**
