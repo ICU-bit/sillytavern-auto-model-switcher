@@ -563,7 +563,12 @@ function bindSettingsListeners($panel) {
         }
         const fid = String($row.data('field') || '');
         const key = String($row.data('key') || '');
-        const presetData = getSettingsRoot().nsfwPresetData;
+        // 优先用当前激活预设（多预设系统），回退到 legacy nsfwPresetData
+        // 修复：原代码只写 legacy 字段, 导致多预设场景下编辑不会持久化
+        const activePreset = getActivePreset();
+        const presetData = activePreset
+            ? activePreset.data
+            : getSettingsRoot().nsfwPresetData;
         if (!presetData)
             return;
         let val = key ? presetData[key] : '';
@@ -592,8 +597,17 @@ function bindSettingsListeners($panel) {
                 const num = Number(newVal);
                 presetData[key] = (newVal !== '' && !isNaN(num)) ? num : (newVal === 'true' ? true : (newVal === 'false' ? false : newVal));
             }
-            getSettingsRoot().nsfwPresetData = presetData;
-            saveSettingsDebounced();
+            // 修复：写回当前激活预设的 data, 不再写 legacy nsfwPresetData
+            // 持久化 (savePresetAs 内部会调 saveSettingsDebounced)
+            if (activePreset) {
+                const activeName = getActivePresetName();
+                savePresetAs(activeName, presetData, activePreset.modules);
+            }
+            else {
+                // 无激活预设（仅 legacy 数据）: 仍写 legacy 保持向后兼容
+                getSettingsRoot().nsfwPresetData = presetData;
+                saveSettingsDebounced();
+            }
             const display = newVal.length > 50 ? newVal.substring(0, 50) + '...' : newVal;
             $row.find('span:last').text(display);
             addLog('已更新: ' + (key || fid), 'info');
