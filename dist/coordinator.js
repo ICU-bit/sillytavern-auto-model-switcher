@@ -213,8 +213,22 @@ export class SwitcherCoordinator {
         catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
             addLog('协调器: enable 失败: ' + msg, 'error');
-            // 回退 state
-            this.state.onOperationAborted();
+            // 关键修复 (H2):
+            // tryEnable 是由 state 进入 SWITCHED 触发的 hook,
+            // 此时 state 已经是 SWITCHED, 但副作用启用失败。
+            // 不修复会导致 state=SWITCHED + runtime=idle 的死锁——
+            //   - UI 显示"已切换"但 fetch 实际不拦截
+            //   - 用户下次生成被发往原模型, 与 UI 撒谎
+            //   - onOperationAborted 只处理 PENDING_*, 无法救 SWITCHED
+            //
+            // 修复策略:
+            // 1. applyDisable() 回滚可能已部分启用的副作用 (如 activate 成功
+            //    但 setIntercept 失败时, Proxy 还开着)
+            // 2. state.onManualRestore() 强制 SWITCHED → IDLE,
+            //    与 disable('safety_timeout') 的 SWITCHED 分支一致 (line 182-184)
+            this.applyDisable();
+            this.state.onManualRestore();
+            addLog('协调器: 已回滚副作用并强制状态返回 IDLE', 'warning');
         }
     }
     /**
