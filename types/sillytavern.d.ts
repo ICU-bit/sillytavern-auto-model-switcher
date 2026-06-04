@@ -70,10 +70,15 @@ declare module '*/extensions.js' {
 //  Type definitions (used by module declarations above)
 // =============================================================================
 
-/** ST 事件总线接口 */
+/** ST 事件总线接口 (基于 EventEmitter, see lib/eventemitter.js) */
 interface EventSource {
     on(event: string, callback: (...args: any[]) => void | Promise<void>): void;
-    off(event: string, callback: (...args: any[]) => void | Promise<void>): void;
+    /**
+     * 移除事件监听器 (ST 用 EventEmitter, 方法名是 removeListener 不是 off)
+     * 注意: 必须传**同一个函数引用**才能成功移除。
+     */
+    removeListener(event: string, callback: (...args: any[]) => void | Promise<void>): void;
+    once(event: string, callback: (...args: any[]) => void | Promise<void>): void;
     emit(event: string, ...args: any[]): Promise<void>;
 }
 

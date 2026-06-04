@@ -65,65 +65,110 @@ let currentDetectionId = 0;
 let detectionAbortController: AbortController | null = null;
 
 /**
- * 注册所有 SillyTavern 事件监听
+ * 当前已注册的 listener 引用 (用于 unregisterEventHandlers / 幂等检查)
+ *
+ * H3 修复: 保存引用, 让重复 registerEventHandlers 调用 (热重载场景) 能先 off 再 on,
+ * 避免同一 handler 多次注册 → detect 重复触发 → 状态错乱。
+ */
+interface RegisteredHandlers {
+    onMessageRendered: (messageId: number, type?: string) => void | Promise<void>;
+    onGenerationStarted: (type?: string, params?: unknown, dryRun?: boolean) => void | Promise<void>;
+    onMessageSent: (messageId: number) => void | Promise<void>;
+    onSettingsLoaded: () => void;
+}
+let registered: RegisteredHandlers | null = null;
+
+/**
+ * 注册所有 SillyTavern 事件监听 (幂等)
+ *
+ * 如果已注册, 先 unregister 再 register (热重载安全)。
  */
 export function registerEventHandlers(deps: EventHandlerDeps): void {
-    eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, (messageId: number, type?: string) => {
-        return onMessageRendered(messageId, type, deps);
-    });
-    eventSource.on(event_types.GENERATION_STARTED, (_type?: string, _params?: unknown, dryRun?: boolean) => {
-        return onGenerationStarted(_type, _params, dryRun, deps);
-    });
-    eventSource.on(event_types.MESSAGE_SENT, (messageId: number) => {
-        return onMessageSent(messageId, deps);
-    });
-    eventSource.on(event_types.EXTENSION_SETTINGS_LOADED, () => {
-        return onSettingsLoaded(deps);
-    });
+    if (registered) {
+        unregisterEventHandlers();
+    }
+
+    const handlers: RegisteredHandlers = {
+        onMessageRendered: (messageId: number, type?: string) => onMessageRendered(messageId, type, deps),
+        onGenerationStarted: (type?: string, params?: unknown, dryRun?: boolean) => onGenerationStarted(type, params, dryRun, deps),
+        onMessageSent: (messageId: number) => onMessageSent(messageId, deps),
+        onSettingsLoaded: () => onSettingsLoaded(deps),
+    };
+
+    eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, handlers.onMessageRendered);
+    eventSource.on(event_types.GENERATION_STARTED, handlers.onGenerationStarted);
+    eventSource.on(event_types.MESSAGE_SENT, handlers.onMessageSent);
+    eventSource.on(event_types.EXTENSION_SETTINGS_LOADED, handlers.onSettingsLoaded);
+
+    registered = handlers;
+}
+
+/**
+ * 移除所有 SillyTavern 事件监听
+ *
+ * 安全幂等: 未注册时 no-op。
+ */
+export function unregisterEventHandlers(): void {
+    if (!registered) return;
+    eventSource.removeListener(event_types.CHARACTER_MESSAGE_RENDERED, registered.onMessageRendered);
+    eventSource.removeListener(event_types.GENERATION_STARTED, registered.onGenerationStarted);
+    eventSource.removeListener(event_types.MESSAGE_SENT, registered.onMessageSent);
+    eventSource.removeListener(event_types.EXTENSION_SETTINGS_LOADED, registered.onSettingsLoaded);
+    registered = null;
 }
 
 async function onMessageRendered(messageId: number, type: string | undefined, deps: EventHandlerDeps): Promise<void> {
-    if (!deps.getIsReady()) return;
-    const settings = loadSettings();
-    if (!settings.enabled || type === 'user') return;
-    if (detectionAbortController) detectionAbortController.abort();
-    detectionAbortController = new AbortController();
-    const thisDetectionId = ++currentDetectionId;
-    const content = getMessageTextById(messageId) || getLastAiMessageText();
-    if (!content) {
-        if (settings.debugMode) addDebugLog('未找到 AI 消息内容');
-        return;
-    }
-    if (settings.debugMode) addDebugLog('检测 AI 回复中... (长度: ' + content.length + ' 字)');
-    const nsfwResult = await detectNSFW(content, detectionAbortController.signal);
-    if (thisDetectionId !== currentDetectionId) return;
-
-    if (nsfwResult === true) {
-        // Phase 4 Batch B Step 7 (BUG-1 修复):
-        // 检测到 NSFW 时, 先 prepare 让 coordinator 缓存最新预设。
-        // - 若状态从 IDLE → PENDING_SWITCH: 数据等下次 generation 启用时用
-        // - 若状态从 PENDING_RESTORE → SWITCHED: handleTransition 触发 tryEnable,
-        //   用刚 prepare 的最新数据自动 re-enable (BUG-1 自动修复)
-        const activePresetForNsfw = getActivePreset();
-        if (activePresetForNsfw && activePresetForNsfw.data) {
-            const root = getSettingsRoot();
-            const mods: PresetModuleEnabledMap = root.nsfwPresetModules || {};
-            const genParams = extractGenParams(activePresetForNsfw.data);
-            deps.coordinator.prepare({
-                presetData: activePresetForNsfw.data,
-                mods,
-                genParams,
-            });
+    // H4 修复: 整个 handler 包 try/catch 防止异常逃逸到 eventSource 事件循环。
+    // - AbortError 静默 (swipe 取消属于正常路径, 不应污染日志)
+    // - 其他异常记录后吞掉, 保护下一次事件分发不被中断
+    try {
+        if (!deps.getIsReady()) return;
+        const settings = loadSettings();
+        if (!settings.enabled || type === 'user') return;
+        if (detectionAbortController) detectionAbortController.abort();
+        detectionAbortController = new AbortController();
+        const thisDetectionId = ++currentDetectionId;
+        const content = getMessageTextById(messageId) || getLastAiMessageText();
+        if (!content) {
+            if (settings.debugMode) addDebugLog('未找到 AI 消息内容');
+            return;
         }
-        if (deps.state.onNsfwDetected()) addLog('检测结果: NSFW → 下次生成将切换模型', 'warning');
-    } else if (nsfwResult === false) {
-        if (deps.state.onCleanDetected()) addLog('检测结果: 正常 → 下次生成将恢复原模型', 'info');
-        else if (settings.debugMode) addDebugLog('检测结果: 正常，保持当前模型');
-    } else {
-        if (deps.state.onDetectionFailed()) addLog('检测失败 → 下次生成将恢复原模型', 'warning');
+        if (settings.debugMode) addDebugLog('检测 AI 回复中... (长度: ' + content.length + ' 字)');
+        const nsfwResult = await detectNSFW(content, detectionAbortController.signal);
+        if (thisDetectionId !== currentDetectionId) return;
+
+        if (nsfwResult === true) {
+            // Phase 4 Batch B Step 7 (BUG-1 修复):
+            // 检测到 NSFW 时, 先 prepare 让 coordinator 缓存最新预设。
+            // - 若状态从 IDLE → PENDING_SWITCH: 数据等下次 generation 启用时用
+            // - 若状态从 PENDING_RESTORE → SWITCHED: handleTransition 触发 tryEnable,
+            //   用刚 prepare 的最新数据自动 re-enable (BUG-1 自动修复)
+            const activePresetForNsfw = getActivePreset();
+            if (activePresetForNsfw && activePresetForNsfw.data) {
+                const root = getSettingsRoot();
+                const mods: PresetModuleEnabledMap = root.nsfwPresetModules || {};
+                const genParams = extractGenParams(activePresetForNsfw.data);
+                deps.coordinator.prepare({
+                    presetData: activePresetForNsfw.data,
+                    mods,
+                    genParams,
+                });
+            }
+            if (deps.state.onNsfwDetected()) addLog('检测结果: NSFW → 下次生成将切换模型', 'warning');
+        } else if (nsfwResult === false) {
+            if (deps.state.onCleanDetected()) addLog('检测结果: 正常 → 下次生成将恢复原模型', 'info');
+            else if (settings.debugMode) addDebugLog('检测结果: 正常，保持当前模型');
+        } else {
+            if (deps.state.onDetectionFailed()) addLog('检测失败 → 下次生成将恢复原模型', 'warning');
+        }
+        const $c = $('#nsfw_switcher_state_text');
+        if ($c.length) $c.text('状态机: ' + deps.state.getStateDescription() + (isInterceptEnabled() ? ' [拦截中]' : ''));
+    } catch (e) {
+        // AbortError = swipe 取消导致 detectNSFW 中断, 正常路径, 静默
+        if (e instanceof Error && e.name === 'AbortError') return;
+        const msg = e instanceof Error ? (e.stack || e.message) : String(e);
+        addLog('onMessageRendered 异常: ' + msg, 'error');
     }
-    const $c = $('#nsfw_switcher_state_text');
-    if ($c.length) $c.text('状态机: ' + deps.state.getStateDescription() + (isInterceptEnabled() ? ' [拦截中]' : ''));
 }
 
 async function onGenerationStarted(_type: string | undefined, _params: unknown, dryRun: boolean | undefined, deps: EventHandlerDeps): Promise<void> {
