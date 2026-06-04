@@ -6,6 +6,6 @@
     "js": "dist/index.js",
     "css": "style.css",
     "author": "ICU-bit",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "homePage": "https://github.com/ICU-bit/sillytavern-auto-model-switcher"
 }
