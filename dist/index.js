@@ -1,119 +1,25 @@
 console.log('NSFW_MODULE_LOADED');
-import { eventSource, event_types, saveSettingsDebounced } from '../../../../../script.js';
+import { saveSettingsDebounced } from '../../../../../script.js';
 import { extension_settings } from '../../../../extensions.js';
-import { addLog, addDebugLog, clearLogs, setRenderCallback, renderLogsHtml, renderLogEntryHtml, getLogs, copyLogsToClipboard, exportLogsAsJson, initLogs } from './logger.js';
-import { EXTENSION_NAME, DEFAULT_SETTINGS, loadSettings, collectAndSaveFromDom, applySettingsToDom, updateStatusIndicator, getAllPresetNames, getActivePreset, getActivePresetName, savePresetAs, deletePreset, renamePreset, exportPreset } from './settings.js';
+import { addLog, clearLogs, setRenderCallback, renderLogsHtml, renderLogEntryHtml, getLogs, copyLogsToClipboard, exportLogsAsJson, initLogs } from './logger.js';
+import { EXTENSION_NAME, DEFAULT_SETTINGS, loadSettings, collectAndSaveFromDom, updateStatusIndicator, getAllPresetNames, getActivePreset, getActivePresetName, savePresetAs, deletePreset, renamePreset, exportPreset } from './settings.js';
 import { createStateMachine } from './state.js';
 import { createCoordinator } from './coordinator.js';
-import { detectNSFW, getLastAiMessageText, getMessageTextById, testNsfwApi } from './detector.js';
+import { testNsfwApi } from './detector.js';
 import { restoreOriginalModel, clearSettingsSnapshot } from './model-switcher.js';
 import { initFetchInterceptor, isInterceptEnabled, setOnRequestRedirected } from './direct-api.js';
 import { initProxies } from './preset-proxy.js';
 import { isMobile, showPrompt, showConfirm, shareOrDownload, initAccordion, prefersReducedMotion } from './mobile.js';
+// Phase 4 Batch C: utility 模块
+import { escapeHtml, getSettingsRoot } from './utils.js';
+import { renderPresetModulesHtml, buildDefaultEnabledModules } from './preset-modules.js';
+import { registerEventHandlers, callOnSettingsLoadedNow } from './event-handlers.js';
 console.log('ALL_IMPORTS_OK');
 addLog('所有模块导入成功', 'info', 'debug');
 // ===== 模块级状态 =====
 let state;
 let coordinator;
 let isReady = false;
-let currentDetectionId = 0;
-let detectionAbortController = null;
-/** 类型化访问 extension_settings[EXTENSION_NAME] */
-function getSettingsRoot() {
-    return extension_settings[EXTENSION_NAME];
-}
-const PRESET_MODULES = [
-    { id: 'genParams', name: '生成参数', fields: ['temperature', 'top_p', 'top_k', 'top_a', 'min_p', 'repetition_penalty', 'frequency_penalty', 'presence_penalty', 'openai_max_context', 'openai_max_tokens'], test: function (p) { return ['temperature', 'top_p', 'top_k', 'repetition_penalty'].some(function (k) { return p[k] !== undefined; }); } },
-    { id: 'instruct', name: 'Instruct 模板', fields: ['input_sequence', 'output_sequence', 'system_sequence', 'stop_sequence', 'wrap', 'names_behavior', 'activation_regex', 'output_suffix', 'input_suffix', 'system_suffix', 'first_output_sequence', 'last_output_sequence', 'system_same_as_user', 'sequences_as_stop_strings', 'skip_examples', 'macro', 'user_alignment_message', 'last_system_sequence', 'first_input_sequence', 'last_input_sequence', 'story_string_prefix', 'story_string_suffix'], test: function (p) { return p.input_sequence !== undefined; } },
-    { id: 'context', name: 'Context 模板', fields: ['story_string', 'chat_start', 'example_separator', 'use_stop_strings', 'names_as_stop_strings', 'story_string_position', 'story_string_depth', 'story_string_role', 'always_force_name2', 'trim_sentences', 'single_line'], test: function (p) { return p.story_string !== undefined; } },
-    { id: 'sysprompt', name: 'System Prompt', fields: ['content', 'post_history'], test: function (p) { return p.content !== undefined && p.name !== undefined; } },
-    { id: 'reasoning', name: 'Reasoning 格式', fields: ['prefix', 'suffix', 'separator'], test: function (p) { return p.prefix !== undefined && p.suffix !== undefined; } },
-    { id: 'prompts', name: '自定义提示词', fields: [], test: function (p) { return Array.isArray(p.prompts) && p.prompts.length > 0; } },
-];
-/** 从预设中提取生成参数 */
-function extractGenParams(preset) {
-    if (!preset)
-        return null;
-    const params = {};
-    const genKeys = ['temperature', 'frequency_penalty', 'presence_penalty', 'top_p', 'top_k', 'top_a', 'min_p', 'repetition_penalty', 'openai_max_context', 'openai_max_tokens', 'stream_openai'];
-    for (let i = 0; i < genKeys.length; i++) {
-        const key = genKeys[i];
-        if (preset[key] !== undefined)
-            params[key] = preset[key];
-    }
-    return Object.keys(params).length ? params : null;
-}
-function escapeHtml(str) {
-    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-function renderPresetModulesHtml(preset, enabled) {
-    if (!preset)
-        return '<div class="nsfw-preset-status">未导入预设</div>';
-    const name = preset.name || preset.display_name || '未命名预设';
-    let html = '<div class="nsfw-preset-status">已导入: <span class="preset-name">' + name + '</span></div>';
-    html += '<div class="nsfw-preset-modules">';
-    for (let mi = 0; mi < PRESET_MODULES.length; mi++) {
-        const m = PRESET_MODULES[mi];
-        if (!m.test(preset))
-            continue;
-        const modOn = !enabled || enabled[m.id] !== false;
-        html += '<div class="nsfw-module-header" data-module="' + m.id + '">' +
-            '<input type="checkbox" class="nsfw-module-chk" data-module="' + m.id + '" ' + (modOn ? 'checked' : '') + '>' +
-            m.name + '</div>';
-        if (m.id === 'prompts' && Array.isArray(preset.prompts)) {
-            const prompts = preset.prompts;
-            for (let pi = 0; pi < prompts.length; pi++) {
-                const pp = prompts[pi];
-                const pfId = 'prompt_' + pi;
-                const pfOn = enabled && enabled[pfId] !== false;
-                html += '<div class="nsfw-field-row" data-field="' + pfId + '">' +
-                    '<input type="checkbox" class="nsfw-field-chk" data-field="' + pfId + '" ' + (pfOn ? 'checked' : '') + '>' +
-                    '<span class="nsfw-field-value">' + escapeHtml(pp.name || '(未命名)') + '</span></div>';
-            }
-        }
-        else if (m.fields) {
-            for (let fi = 0; fi < m.fields.length; fi++) {
-                const fk = m.fields[fi];
-                if (preset[fk] !== undefined) {
-                    const fId = m.id + '_' + fk;
-                    const fOn = enabled && enabled[fId] !== false;
-                    let val = String(preset[fk]);
-                    if (val.length > 80)
-                        val = val.substring(0, 80) + '...';
-                    html += '<div class="nsfw-field-row" data-field="' + fId + '" data-key="' + fk + '">' +
-                        '<input type="checkbox" class="nsfw-field-chk" data-field="' + fId + '" ' + (fOn ? 'checked' : '') + '>' +
-                        '<span class="nsfw-field-key">' + fk + ':</span>' +
-                        '<span class="nsfw-field-value">' + escapeHtml(val) + '</span></div>';
-                }
-            }
-        }
-    }
-    html += '</div>';
-    return html;
-}
-function buildDefaultEnabledModules(preset) {
-    const enabled = {};
-    if (!preset)
-        return enabled;
-    for (let mi = 0; mi < PRESET_MODULES.length; mi++) {
-        const m = PRESET_MODULES[mi];
-        if (!m.test(preset))
-            continue;
-        enabled[m.id] = true;
-        if (m.id === 'prompts' && Array.isArray(preset.prompts)) {
-            const prompts = preset.prompts;
-            for (let pi = 0; pi < prompts.length; pi++)
-                enabled['prompt_' + pi] = true;
-        }
-        else if (m.fields) {
-            for (let fi = 0; fi < m.fields.length; fi++) {
-                if (preset[m.fields[fi]] !== undefined)
-                    enabled[m.id + '_' + m.fields[fi]] = true;
-            }
-        }
-    }
-    return enabled;
-}
 // ---------------------------------------------------------------------------
 //  Settings HTML — Section Builders
 // ---------------------------------------------------------------------------
@@ -640,128 +546,9 @@ function bindSettingsListeners($panel) {
     }
     updateIndicator();
 }
-function registerEventListeners() {
-    eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, onMessageRendered);
-    eventSource.on(event_types.GENERATION_STARTED, onGenerationStarted);
-    eventSource.on(event_types.MESSAGE_SENT, onMessageSent);
-    eventSource.on(event_types.EXTENSION_SETTINGS_LOADED, onSettingsLoaded);
-}
-async function onMessageRendered(messageId, type) {
-    if (!isReady)
-        return;
-    const settings = loadSettings();
-    if (!settings.enabled || type === 'user')
-        return;
-    if (detectionAbortController)
-        detectionAbortController.abort();
-    detectionAbortController = new AbortController();
-    const thisDetectionId = ++currentDetectionId;
-    const content = getMessageTextById(messageId) || getLastAiMessageText();
-    if (!content) {
-        if (settings.debugMode)
-            addDebugLog('未找到 AI 消息内容');
-        return;
-    }
-    if (settings.debugMode)
-        addDebugLog('检测 AI 回复中... (长度: ' + content.length + ' 字)');
-    const nsfwResult = await detectNSFW(content, detectionAbortController.signal);
-    if (thisDetectionId !== currentDetectionId)
-        return;
-    if (nsfwResult === true) {
-        // Phase 4 Batch B Step 7 (BUG-1 修复):
-        // 检测到 NSFW 时, 先 prepare 让 coordinator 缓存最新预设。
-        // - 若状态从 IDLE → PENDING_SWITCH: 数据等下次 generation 启用时用
-        // - 若状态从 PENDING_RESTORE → SWITCHED: handleTransition 触发 tryEnable,
-        //   用刚 prepare 的最新数据自动 re-enable (BUG-1 自动修复)
-        const activePresetForNsfw = getActivePreset();
-        if (activePresetForNsfw && activePresetForNsfw.data) {
-            const root = getSettingsRoot();
-            const mods = root.nsfwPresetModules || {};
-            const genParams = extractGenParams(activePresetForNsfw.data);
-            coordinator.prepare({
-                presetData: activePresetForNsfw.data,
-                mods,
-                genParams,
-            });
-        }
-        if (state.onNsfwDetected())
-            addLog('检测结果: NSFW → 下次生成将切换模型', 'warning');
-    }
-    else if (nsfwResult === false) {
-        if (state.onCleanDetected())
-            addLog('检测结果: 正常 → 下次生成将恢复原模型', 'info');
-        else if (settings.debugMode)
-            addDebugLog('检测结果: 正常，保持当前模型');
-    }
-    else {
-        if (state.onDetectionFailed())
-            addLog('检测失败 → 下次生成将恢复原模型', 'warning');
-    }
-    const $c = $('#nsfw_switcher_state_text');
-    if ($c.length)
-        $c.text('状态机: ' + state.getStateDescription() + (isInterceptEnabled() ? ' [拦截中]' : ''));
-}
-async function onGenerationStarted(_type, _params, dryRun) {
-    if (!isReady || dryRun)
-        return;
-    const settings = loadSettings();
-    if (!settings.enabled)
-        return;
-    const action = state.getPendingAction();
-    // Phase 4 Batch B Step 7: 接管 switch / restore 路径
-    // 旧实现: 同步三连调用 activate/setIntercept/setPresetOverrides + state.onXxxApplied
-    // 新实现: prepare(overrides) → state.onSwitchApplied 触发 transition →
-    //          coordinator.handleTransition 自动 enable; restore 同理走 IDLE 自动 disable
-    if (action === 'switch') {
-        addLog('生成开始 → 启用拦截（上次回复为 NSFW）', 'info');
-        const activePreset = getActivePreset();
-        if (activePreset && activePreset.data) {
-            const root = getSettingsRoot();
-            const mods = root.nsfwPresetModules || {};
-            const genParams = extractGenParams(activePreset.data);
-            // 先 prepare, 让 state 转换 hook 触发 enable 时能用
-            coordinator.prepare({
-                presetData: activePreset.data,
-                mods,
-                genParams,
-            });
-        }
-        // state 转换驱动副作用 (PENDING_SWITCH → SWITCHED → handleTransition → tryEnable)
-        state.onSwitchApplied();
-    }
-    else if (action === 'restore') {
-        addLog('生成开始 → 禁用拦截（上次回复正常）', 'info');
-        // state 转换驱动副作用 (PENDING_RESTORE → IDLE → handleTransition → applyDisable)
-        state.onRestoreApplied();
-    }
-    else {
-        if (settings.debugMode)
-            addDebugLog('生成开始 → 无需操作');
-    }
-    const $c = $('#nsfw_switcher_state_text');
-    if ($c.length)
-        $c.text('状态机: ' + state.getStateDescription() + (isInterceptEnabled() ? ' [拦截中]' : ''));
-}
-async function onMessageSent(messageId) {
-    if (!isReady)
-        return;
-    const settings = loadSettings();
-    if (!settings.enabled || !settings.debugMode)
-        return;
-    addLog('用户发送消息 messageId=' + messageId, 'info');
-}
-function onSettingsLoaded() {
-    const settings = loadSettings();
-    addLog('设置已加载', 'info');
-    const $panel = $('#nsfw_switcher_state_text').closest('.inline-drawer');
-    if ($panel.length) {
-        applySettingsToDom(settings, $panel);
-        updateStatusIndicator(settings, $panel);
-        $panel.find('#nsfw_switcher_state_text').text('状态机: ' + state.getStateDescription() + (isInterceptEnabled() ? ' [拦截中]' : ''));
-    }
-    isReady = true;
-    addLog('插件就绪，开始监听事件', 'success');
-}
+// onMessageRendered / onGenerationStarted / onMessageSent / onSettingsLoaded
+// 已迁移到 src/event-handlers.ts (Phase 4 Batch C Step C3)
+// 通过 registerEventHandlers(deps) 在 jQuery ready 阶段注册
 $(() => {
     console.log('JQUERY_READY');
     setupLogRendering();
@@ -787,8 +574,6 @@ $(() => {
     state = createStateMachine();
     coordinator = createCoordinator(state);
     isReady = false;
-    currentDetectionId = 0;
-    detectionAbortController = null;
     initProxies();
     initFetchInterceptor();
     // Phase 4 Batch B Step 8: 接管 Path A (fetch 重定向回调)
@@ -800,9 +585,16 @@ $(() => {
     coordinator.attach();
     const $panel = $('<div id="nsfw_switcher_panel">' + createSettingsHtml() + '</div>').appendTo('#extensions_settings');
     bindSettingsListeners($panel);
-    registerEventListeners();
+    // Phase 4 Batch C Step C3: 事件处理器注入依赖后注册
+    const eventDeps = {
+        state,
+        coordinator,
+        getIsReady: () => isReady,
+        setIsReady: (v) => { isReady = v; },
+    };
+    registerEventHandlers(eventDeps);
     if (extRoot[EXTENSION_NAME])
-        onSettingsLoaded();
+        callOnSettingsLoadedNow(eventDeps);
     console.log('INIT_COMPLETE');
     addLog('初始化完成', 'success');
 });

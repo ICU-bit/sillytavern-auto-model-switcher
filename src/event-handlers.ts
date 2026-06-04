@@ -1,0 +1,192 @@
+/**
+ * NSFW 模型切换器 (SillyTavern Auto Model Switcher)
+ * Copyright (C) 2025 ICU-bit
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+/**
+ * NSFW 模型切换器 - SillyTavern 事件处理器
+ *
+ * Phase 4 Batch C Step C3: 从 index.ts 抽出
+ *
+ * 包含的事件处理器:
+ * - onMessageRendered:  CHARACTER_MESSAGE_RENDERED → NSFW 检测
+ * - onGenerationStarted: GENERATION_STARTED → 触发 switch / restore (状态驱动)
+ * - onMessageSent:       MESSAGE_SENT → 调试日志
+ * - onSettingsLoaded:    EXTENSION_SETTINGS_LOADED → 同步设置到 DOM
+ *
+ * 暴露 registerEventHandlers(deps) 工厂函数, 由 index.ts 注入运行时依赖
+ * (state / coordinator / isReady 引用 + currentDetectionId 闭包状态)。
+ */
+
+import { eventSource, event_types } from '../../../../../script.js';
+import { addLog, addDebugLog } from './logger.js';
+import { loadSettings, applySettingsToDom, updateStatusIndicator, getActivePreset, type PresetModuleEnabledMap } from './settings.js';
+import { detectNSFW, getLastAiMessageText, getMessageTextById } from './detector.js';
+import { isInterceptEnabled } from './direct-api.js';
+import type { ModelStateMachine } from './state.js';
+import type { SwitcherCoordinator } from './coordinator.js';
+import { extractGenParams, getSettingsRoot } from './utils.js';
+
+/**
+ * 事件处理器运行时依赖
+ *
+ * 由 index.ts 在 jQuery ready 阶段实例化, 注入到 registerEventHandlers。
+ */
+export interface EventHandlerDeps {
+    /** 状态机实例 */
+    state: ModelStateMachine;
+    /** 协调器实例 */
+    coordinator: SwitcherCoordinator;
+    /** 获取 isReady (闭包形式, 因为 ready 状态会在 onSettingsLoaded 中由 false 变 true) */
+    getIsReady: () => boolean;
+    /** 设置 isReady (由 onSettingsLoaded 在加载完毕时调用) */
+    setIsReady: (v: boolean) => void;
+}
+
+/**
+ * 内部 detection 闭包状态 (swipe 取消用)
+ *
+ * 此模块内的局部状态, 不需要从 index.ts 注入。
+ */
+let currentDetectionId = 0;
+let detectionAbortController: AbortController | null = null;
+
+/**
+ * 注册所有 SillyTavern 事件监听
+ */
+export function registerEventHandlers(deps: EventHandlerDeps): void {
+    eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, (messageId: number, type?: string) => {
+        return onMessageRendered(messageId, type, deps);
+    });
+    eventSource.on(event_types.GENERATION_STARTED, (_type?: string, _params?: unknown, dryRun?: boolean) => {
+        return onGenerationStarted(_type, _params, dryRun, deps);
+    });
+    eventSource.on(event_types.MESSAGE_SENT, (messageId: number) => {
+        return onMessageSent(messageId, deps);
+    });
+    eventSource.on(event_types.EXTENSION_SETTINGS_LOADED, () => {
+        return onSettingsLoaded(deps);
+    });
+}
+
+async function onMessageRendered(messageId: number, type: string | undefined, deps: EventHandlerDeps): Promise<void> {
+    if (!deps.getIsReady()) return;
+    const settings = loadSettings();
+    if (!settings.enabled || type === 'user') return;
+    if (detectionAbortController) detectionAbortController.abort();
+    detectionAbortController = new AbortController();
+    const thisDetectionId = ++currentDetectionId;
+    const content = getMessageTextById(messageId) || getLastAiMessageText();
+    if (!content) {
+        if (settings.debugMode) addDebugLog('未找到 AI 消息内容');
+        return;
+    }
+    if (settings.debugMode) addDebugLog('检测 AI 回复中... (长度: ' + content.length + ' 字)');
+    const nsfwResult = await detectNSFW(content, detectionAbortController.signal);
+    if (thisDetectionId !== currentDetectionId) return;
+
+    if (nsfwResult === true) {
+        // Phase 4 Batch B Step 7 (BUG-1 修复):
+        // 检测到 NSFW 时, 先 prepare 让 coordinator 缓存最新预设。
+        // - 若状态从 IDLE → PENDING_SWITCH: 数据等下次 generation 启用时用
+        // - 若状态从 PENDING_RESTORE → SWITCHED: handleTransition 触发 tryEnable,
+        //   用刚 prepare 的最新数据自动 re-enable (BUG-1 自动修复)
+        const activePresetForNsfw = getActivePreset();
+        if (activePresetForNsfw && activePresetForNsfw.data) {
+            const root = getSettingsRoot();
+            const mods: PresetModuleEnabledMap = root.nsfwPresetModules || {};
+            const genParams = extractGenParams(activePresetForNsfw.data);
+            deps.coordinator.prepare({
+                presetData: activePresetForNsfw.data,
+                mods,
+                genParams,
+            });
+        }
+        if (deps.state.onNsfwDetected()) addLog('检测结果: NSFW → 下次生成将切换模型', 'warning');
+    } else if (nsfwResult === false) {
+        if (deps.state.onCleanDetected()) addLog('检测结果: 正常 → 下次生成将恢复原模型', 'info');
+        else if (settings.debugMode) addDebugLog('检测结果: 正常，保持当前模型');
+    } else {
+        if (deps.state.onDetectionFailed()) addLog('检测失败 → 下次生成将恢复原模型', 'warning');
+    }
+    const $c = $('#nsfw_switcher_state_text');
+    if ($c.length) $c.text('状态机: ' + deps.state.getStateDescription() + (isInterceptEnabled() ? ' [拦截中]' : ''));
+}
+
+async function onGenerationStarted(_type: string | undefined, _params: unknown, dryRun: boolean | undefined, deps: EventHandlerDeps): Promise<void> {
+    if (!deps.getIsReady() || dryRun) return;
+    const settings = loadSettings();
+    if (!settings.enabled) return;
+    const action = deps.state.getPendingAction();
+
+    // Phase 4 Batch B Step 7: 接管 switch / restore 路径
+    // 旧实现: 同步三连调用 activate/setIntercept/setPresetOverrides + state.onXxxApplied
+    // 新实现: prepare(overrides) → state.onSwitchApplied 触发 transition →
+    //          coordinator.handleTransition 自动 enable; restore 同理走 IDLE 自动 disable
+    if (action === 'switch') {
+        addLog('生成开始 → 启用拦截（上次回复为 NSFW）', 'info');
+        const activePreset = getActivePreset();
+        if (activePreset && activePreset.data) {
+            const root = getSettingsRoot();
+            const mods: PresetModuleEnabledMap = root.nsfwPresetModules || {};
+            const genParams = extractGenParams(activePreset.data);
+            // 先 prepare, 让 state 转换 hook 触发 enable 时能用
+            deps.coordinator.prepare({
+                presetData: activePreset.data,
+                mods,
+                genParams,
+            });
+        }
+        // state 转换驱动副作用 (PENDING_SWITCH → SWITCHED → handleTransition → tryEnable)
+        deps.state.onSwitchApplied();
+    } else if (action === 'restore') {
+        addLog('生成开始 → 禁用拦截（上次回复正常）', 'info');
+        // state 转换驱动副作用 (PENDING_RESTORE → IDLE → handleTransition → applyDisable)
+        deps.state.onRestoreApplied();
+    } else {
+        if (settings.debugMode) addDebugLog('生成开始 → 无需操作');
+    }
+    const $c = $('#nsfw_switcher_state_text');
+    if ($c.length) $c.text('状态机: ' + deps.state.getStateDescription() + (isInterceptEnabled() ? ' [拦截中]' : ''));
+}
+
+async function onMessageSent(messageId: number, deps: EventHandlerDeps): Promise<void> {
+    if (!deps.getIsReady()) return;
+    const settings = loadSettings();
+    if (!settings.enabled || !settings.debugMode) return;
+    addLog('用户发送消息 messageId=' + messageId, 'info');
+}
+
+function onSettingsLoaded(deps: EventHandlerDeps): void {
+    const settings = loadSettings();
+    addLog('设置已加载', 'info');
+    const $panel = $('#nsfw_switcher_state_text').closest('.inline-drawer');
+    if ($panel.length) {
+        applySettingsToDom(settings, $panel);
+        updateStatusIndicator(settings, $panel);
+        $panel.find('#nsfw_switcher_state_text').text('状态机: ' + deps.state.getStateDescription() + (isInterceptEnabled() ? ' [拦截中]' : ''));
+    }
+    deps.setIsReady(true);
+    addLog('插件就绪，开始监听事件', 'success');
+}
+
+/**
+ * 暴露 onSettingsLoaded 给 index.ts 在初始化时手动调用一次
+ * (ST 的 EXTENSION_SETTINGS_LOADED 事件未必早于插件 ready, 需要手动触发)
+ */
+export function callOnSettingsLoadedNow(deps: EventHandlerDeps): void {
+    onSettingsLoaded(deps);
+}
