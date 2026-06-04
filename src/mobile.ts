@@ -46,10 +46,15 @@ interface ModalDialog extends HTMLDivElement {
 
 /**
  * 统一移动端检测入口
+ *
+ * SillyTavern 的 getContext().isMobile 是一个 **函数引用**（()=>boolean）,
+ * 不是布尔属性。早期错误地写成 `Boolean(getContext().isMobile)`,
+ * 即对函数引用做布尔强转, 结果永远为 true (函数总是 truthy)。
+ * 现已修复为正确调用 isMobile()。
  */
 export function isMobile(): boolean {
     try {
-        return Boolean(getContext().isMobile);
+        return Boolean(getContext().isMobile?.());
     } catch (e) {
         return false;
     }

@@ -248,8 +248,14 @@ interface SillyTavernContext {
     chat: ChatMessage[];
     /** 当前角色 ID */
     characterId?: string | number;
-    /** 是否移动端 UI */
-    isMobile?: boolean;
+    /**
+     * 是否移动端 UI
+     *
+     * ⚠️ ST 实际把 isMobile 暴露为一个 **函数**（()=>boolean）, 不是布尔属性。
+     * 历史声明为 boolean 导致 `Boolean(ctx.isMobile)` 永远是 true（函数 truthy）。
+     * 此处声明为可选函数, 调用方需用 ctx.isMobile?.() 取布尔值。
+     */
+    isMobile?: () => boolean;
     /** 容许访问其他未声明字段 */
     [key: string]: unknown;
 }
