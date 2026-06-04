@@ -2,10 +2,12 @@
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPLv3-blue.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/ICU-bit/sillytavern-auto-model-switcher)](https://github.com/ICU-bit/sillytavern-auto-model-switcher/releases)
-[![JavaScript](https://img.shields.io/badge/language-JavaScript-yellow.svg)](index.js)
+[![TypeScript](https://img.shields.io/badge/language-TypeScript-3178C6.svg)](src/index.ts)
 [![SillyTavern](https://img.shields.io/badge/SillyTavern-Extension-FF6B6B.svg)](https://sillytavern.app)
 
 SillyTavern 扩展插件：在 AI 回复完成后自动检测 NSFW 内容，并根据检测结果在下次生成时切换至预设模型。
+
+> 🆕 **v1.2.0**: TypeScript 全面迁移 + 6 个致命 Bug 修复 + 安全加固。详见 [CHANGELOG.md](CHANGELOG.md)。
 
 ---
 
@@ -48,6 +50,19 @@ git clone https://github.com/ICU-bit/sillytavern-auto-model-switcher.git
 
 # 重启 SillyTavern（插件自动加载）
 ```
+
+### 升级到最新版本
+
+如果你已经安装过本插件，升级方式：
+
+```bash
+cd SillyTavern/public/scripts/extensions/third-party/sillytavern-auto-model-switcher/
+git pull
+```
+
+然后在浏览器中 `Ctrl + F5` 强制刷新酒馆即可。**配置自动迁移，无需重新设置。**
+
+> 💡 本插件采用「dist 入 git」模式 — 用户开箱即用，无需安装 Node.js 或运行 `npm install`。
 
 ## 配置说明
 
@@ -176,31 +191,51 @@ CHARACTER_MESSAGE_RENDERED 事件触发
 ## 技术架构
 
 ```
-index.js                    ← 入口控制器（事件注册、设置面板）
-├── style.css               ← 原生 ST 设计系统样式表
-├── src/direct-api.js       ← [Plan B] fetch 拦截器 + 直调 API（核心）
-├── src/preset-proxy.js     ← Proxy 预设系统（偷天换日）
-├── src/state.js            ← 有限状态机（IDLE → PENDING → SWITCHED → RESTORE）
-├── src/detector.js         ← NSFW 检测 API 调用
-├── src/logger.js           ← 日志收集与渲染
-├── src/settings.js         ← 设置持久化与 DOM 同步
-└── src/model-switcher.js   ← [Plan A 保留] oai_settings 快照（仅手动恢复用）
+src/                              dist/                       ← 编译产物 (入 git)
+├── index.ts                      → dist/index.js             ← 入口控制器
+├── coordinator.ts                → dist/coordinator.js       ← 状态协调器（统一三层副作用）
+├── state.ts                      → dist/state.js             ← 有限状态机 + onTransition hook
+├── event-handlers.ts             → dist/event-handlers.js    ← ST 事件处理器（DI 化）
+├── direct-api.ts                 → dist/direct-api.js        ← Plan B fetch 拦截器 + 直调
+├── preset-proxy.ts               → dist/preset-proxy.js      ← Proxy 预设系统（偷天换日）
+├── preset-modules.ts             → dist/preset-modules.js    ← 预设模块定义与渲染
+├── detector.ts                   → dist/detector.js          ← NSFW 检测 API 调用
+├── model-switcher.ts             → dist/model-switcher.js    ← oai_settings 快照（手动恢复）
+├── settings.ts                   → dist/settings.js          ← 设置持久化与 DOM 同步
+├── logger.ts                     → dist/logger.js            ← 日志收集与渲染
+├── mobile.ts                     → dist/mobile.js            ← 移动端工具（模态框/手风琴）
+└── utils.ts                      → dist/utils.js             ← 通用工具函数
+
+types/sillytavern.d.ts            ← 集中收口 ST 类型声明
+style.css                         ← 原生 ST 设计系统样式表
+tsconfig.json                     ← TypeScript strict 模式配置
+manifest.json                     ← ST 扩展清单 (js → dist/index.js)
 ```
 
-详细技术文档见 [ARCHITECTURE.md](ARCHITECTURE.md)。
+详细技术文档见 [ARCHITECTURE.md](ARCHITECTURE.md)，开发者贡献指南见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## 开发计划
 
-- [x] **B 方案** — fetch 拦截直调 API，完全绕过 oai_settings（v1.0.0 已实现）
-- [x] **多预设管理** — ST 风格下拉选择器，导入/导出/删除/重命名/新建
-- [x] **Proxy 预设系统** — 通过 Proxy 拦截 ST 设置对象，无需直接修改 oai_settings
-- [x] **原生 UI 设计** — 使用 ST CSS 变量和组件类，完美融入暗色主题
-- [x] **增强日志系统** — 可折叠面板，按级别过滤，支持复制/导出
-- [ ] **独立消息拼接** — 自行组装聊天上下文，支持任意 API 协议
-- [ ] **多目标模型** — 支持多个 NSFW 模型按规则轮换
-- [ ] **可配置超时** — 直调 API 超时时间用户可调
+### ✅ 已完成
 
-详见 [TODO.md](TODO.md)。
+- **B 方案** — fetch 拦截直调 API，完全绕过 oai_settings (v1.0.0)
+- **多预设管理** — ST 风格下拉选择器，导入/导出/删除/重命名/新建 (v1.0.0)
+- **Proxy 预设系统** — 通过 Proxy 拦截 ST 设置对象 (v1.0.0)
+- **原生 UI 设计** — 使用 ST CSS 变量和组件类 (v1.0.0)
+- **增强日志系统** — 可折叠面板，按级别过滤，支持复制/导出 (v1.0.0)
+- **移动端适配** — 自定义模态框、手风琴模式、触摸目标 44px (v1.1.0)
+- **TypeScript 全面迁移** — 全部源码 strict 模式 .ts (v1.2.0)
+- **状态协调器** — 统一持有 fetch + Proxy + presetOverrides 三层副作用 (v1.2.0)
+- **致命 Bug 修复** — isMobile / SWITCHED 卡死 / Proxy 污染 / 事件泄漏 等 6 处 (v1.2.0)
+- **安全加固** — 原型污染防护 / Symbol marker / 资源泄漏修复 (v1.2.0)
+
+### 🔮 计划中
+
+- **独立消息拼接** — 自行组装聊天上下文，支持任意 API 协议
+- **多目标模型** — 支持多个 NSFW 模型按规则轮换
+- **可配置超时** — 直调 API 超时时间用户可调
+
+详见 [TODO.md](TODO.md) 和 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 贡献指南
 
