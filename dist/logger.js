@@ -61,13 +61,22 @@ function saveLogsToStorage() {
 }
 /**
  * 从 localStorage 加载日志
+ *
+ * M5 修复: 校验解析结果是数组, 防止外部脚本污染 localStorage 后
+ * 导致 logs 变成非数组 → 后续 logs.unshift 抛 TypeError → 整个日志
+ * 模块失效, 连带 addLog 全部失败。
  */
 function loadLogsFromStorage() {
     try {
         const stored = localStorage.getItem(STORAGE_KEY);
-        if (stored) {
-            logs = JSON.parse(stored);
+        if (!stored)
+            return;
+        const parsed = JSON.parse(stored);
+        if (!Array.isArray(parsed)) {
+            // 数据已被污染, 静默丢弃并不写回 (避免破坏其他数据)
+            return;
         }
+        logs = parsed;
     }
     catch (e) {
         // 解析失败或 localStorage 不可用，静默失败

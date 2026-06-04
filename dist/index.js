@@ -311,7 +311,14 @@ function bindSettingsListeners($panel) {
                 const result = ev.target?.result;
                 if (typeof result !== 'string')
                     return;
-                const rawData = JSON.parse(result);
+                // M1 修复: 用 reviver 过滤 __proto__ / constructor / prototype 等危险键,
+                // 防止恶意预设文件污染对象原型 (CVE-2018-3721 类问题)。
+                const rawData = JSON.parse(result, (key, value) => {
+                    if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+                        return undefined;
+                    }
+                    return value;
+                });
                 let presetData;
                 let presetName;
                 let presetModules;
@@ -554,11 +561,15 @@ $(() => {
     setupLogRendering();
     initLogs();
     addLog('jQuery 就绪', 'info', 'debug');
-    const extRoot = extension_settings;
-    extRoot[EXTENSION_NAME] = { ...DEFAULT_SETTINGS, ...(extRoot[EXTENSION_NAME] || {}) };
+    // L3 修复: 用 utils.getSettingsRoot() 替代重复的 `extension_settings as unknown as`。
+    // 但首次初始化需要在键不存在时创建, 借用 getSettingsRoot 之前需要先 seed 默认值。
+    {
+        const extAsAny = extension_settings;
+        extAsAny[EXTENSION_NAME] = { ...DEFAULT_SETTINGS, ...(extAsAny[EXTENSION_NAME] || {}) };
+    }
     // Migrate legacy single-preset to multi-preset
     (function () {
-        const settings = extRoot[EXTENSION_NAME];
+        const settings = getSettingsRoot();
         if (settings.nsfwPresetData && Object.keys(settings.nsfwPresets || {}).length === 0) {
             const legacy = settings.nsfwPresetData;
             const name = legacy.name || legacy.display_name || '默认预设';
@@ -593,7 +604,7 @@ $(() => {
         setIsReady: (v) => { isReady = v; },
     };
     registerEventHandlers(eventDeps);
-    if (extRoot[EXTENSION_NAME])
+    if (getSettingsRoot())
         callOnSettingsLoadedNow(eventDeps);
     console.log('INIT_COMPLETE');
     addLog('初始化完成', 'success');

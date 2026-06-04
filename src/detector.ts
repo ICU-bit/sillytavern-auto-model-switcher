@@ -89,6 +89,16 @@ export async function detectNSFW(
         }
         addApiRequestLog(apiUrl, 'POST', safeHeaders, requestBody);
 
+        // M2 修复: externalSignal 可能在到达此处时**已经** aborted (例如上一次
+        // 检测 abort 后立即触发新检测, 但新 signal 已被 swipe 取消)。
+        // addEventListener('abort') 在已 aborted 的 signal 上**不会**触发回调,
+        // 导致 timer 泄漏 + fetch 仍然发出 + 无人 abort fetch。
+        // 在创建 controller / timer 之前先检查 aborted 状态主动短路, 静默返回 null。
+        if (externalSignal?.aborted) {
+            addDebugLog('检测在启动前已被取消, 跳过');
+            return null;
+        }
+
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 30000);
 
