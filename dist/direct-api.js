@@ -99,9 +99,21 @@ export function initFetchInterceptor() {
                 toastr.warning('[NSFW 模型切换器] 直调API失败，已回退到原始模型', undefined, { timeOut: 5000 });
             }
             // 如果原请求的 signal 已被触发（用户点停止），剥离 signal 避免 fallback 立即失败
-            if (init && init.signal && typeof init.signal === 'object' && init.signal.aborted) {
-                const { signal: _, ...rest } = init;
-                return originalFetch(input, rest);
+            //
+            // H5 修复: signal 可能在 init 上, 也可能在 input (Request 实例) 上,
+            // 两种来源都要处理。
+            const initSignal = init?.signal;
+            const inputSignal = input instanceof Request ? input.signal : null;
+            const aborted = (initSignal?.aborted) || (inputSignal?.aborted);
+            if (aborted) {
+                // 剥离 init.signal
+                const cleanInit = init ? { ...init, signal: undefined } : {};
+                // 剥离 input.signal (Request 实例时, 用 Request 拷贝构造)
+                // 注: 直接传 Request 给 fetch 时 signal 由 Request 自身携带, 必须替换 Request
+                const cleanInput = input instanceof Request
+                    ? new Request(input, { signal: null })
+                    : input;
+                return originalFetch(cleanInput, cleanInit);
             }
         }
         return originalFetch(input, init);
