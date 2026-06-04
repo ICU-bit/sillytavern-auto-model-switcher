@@ -1,4 +1,3 @@
-import { addStateTransitionLog } from './logger.js';
 /**
  * NSFW 模型切换器 (SillyTavern Auto Model Switcher)
  * Copyright (C) 2025 ICU-bit
@@ -16,7 +15,6 @@ import { addStateTransitionLog } from './logger.js';
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-
 /**
  * NSFW 模型切换器 - 状态机模块
  *
@@ -28,10 +26,16 @@ import { addStateTransitionLog } from './logger.js';
  *   SWITCHED ──(检测到正常内容)──→ PENDING_RESTORE
  *   PENDING_RESTORE ──(生成开始已恢复)──→ IDLE
  *   (任何状态) ──(手动恢复)──→ IDLE
+ *
+ * Phase 4 Batch B (Step 1):
+ *   状态机引入 onTransition hook, 允许 SwitcherCoordinator 订阅状态变更,
+ *   自动驱动 fetch 拦截/Proxy 激活的 enable/disable。
+ *   所有内部状态变更现在统一通过 private transition() 调用, 保证所有路径
+ *   都会触发 hook。
  */
-
+import { addStateTransitionLog } from './logger.js';
 /** 状态常量 */
-var State = Object.freeze({
+export const State = Object.freeze({
     /** 空闲状态，无待处理动作 */
     IDLE: 'idle',
     /** 待切换：下一次生成时切换到目标模型 */
@@ -41,160 +45,171 @@ var State = Object.freeze({
     /** 待恢复：下一次生成时恢复原模型 */
     PENDING_RESTORE: 'pending_restore',
 });
-
-
 export class ModelStateMachine {
-    constructor() {
-        /** @type {string} 当前状态 */
-        this._state = State.IDLE;
-    }
-
-    /** @returns {string} 当前状态 */
+    /** 当前状态 */
+    _state = State.IDLE;
+    /** transition 订阅者列表 */
+    _listeners = [];
+    /** 当前状态 */
     get state() { return this._state; }
-
-    /** @returns {boolean} 当前是否处于「已切换」相关状态 */
+    /**
+     * 字面量类型 getter (Oracle 建议: 避免暴露 string)
+     * 返回与 State 常量等价的字面量联合, 调用方可安全 switch。
+     */
+    getStatus() { return this._state; }
+    /** 当前是否处于「已切换」相关状态 */
     get isSwitchedOrPending() {
         return this._state === State.SWITCHED
             || this._state === State.PENDING_RESTORE;
     }
-
-    /** @returns {boolean} 当前是否正在使用切换后的模型 */
+    /** 当前是否正在使用切换后的模型 */
     get isUsingSwitchedModel() {
         return this._state === State.SWITCHED;
     }
-
-    /** @returns {boolean} 是否有待处理的动作 */
-    get hasPendingAction() {
-        return this._state === State.PENDING_SWITCH
-            || this._state === State.PENDING_RESTORE;
-    }
-
-    /** @returns {boolean} 是否有待切换动作 */
+    /** 是否有待切换动作 */
     get shouldSwitch() {
         return this._state === State.PENDING_SWITCH;
     }
-
-    /** @returns {boolean} 是否有待恢复动作 */
+    /** 是否有待恢复动作 */
     get shouldRestore() {
         return this._state === State.PENDING_RESTORE;
     }
-
+    /**
+     * 注册状态转换订阅者
+     *
+     * 订阅者在每次成功的状态转换后被同步调用 (无状态变化时不触发)。
+     * Hook 内抛错会被 catch 并降级 (Oracle 建议: 避免污染 FSM)。
+     *
+     * @returns 取消订阅的函数
+     */
+    onTransition(listener) {
+        this._listeners.push(listener);
+        return () => {
+            const idx = this._listeners.indexOf(listener);
+            if (idx !== -1)
+                this._listeners.splice(idx, 1);
+        };
+    }
+    /**
+     * 统一的状态转换入口 (内部使用)
+     *
+     * - 记录日志
+     * - 同步通知所有订阅者
+     * - 订阅者抛错时 try/catch + console.error, 不影响 FSM 自身
+     */
+    transition(next, reason) {
+        const from = this._state;
+        if (from === next)
+            return;
+        this._state = next;
+        addStateTransitionLog(from, next, reason);
+        // 通知订阅者
+        const ctx = { from, to: next, reason };
+        for (let i = 0; i < this._listeners.length; i++) {
+            try {
+                this._listeners[i](ctx);
+            }
+            catch (e) {
+                const msg = e instanceof Error ? e.stack || e.message : String(e);
+                console.error('[NSFW模型切换器] onTransition listener threw:', msg);
+            }
+        }
+    }
     /**
      * 只读检查：当前状态需要生成时执行什么动作
-     * @returns {'switch'|'restore'|'none'}
      */
     getPendingAction() {
-        if (this._state === State.PENDING_SWITCH) return 'switch';
-        if (this._state === State.PENDING_RESTORE) return 'restore';
+        if (this._state === State.PENDING_SWITCH)
+            return 'switch';
+        if (this._state === State.PENDING_RESTORE)
+            return 'restore';
         return 'none';
     }
-
     /**
      * 检测到 NSFW → 标记待切换
-     * @returns {boolean} 是否发生了状态转换
+     * @returns 是否发生了状态转换
      */
     onNsfwDetected() {
         if (this._state === State.IDLE) {
-            const oldState = this._state;
-            this._state = State.PENDING_SWITCH;
-            addStateTransitionLog(oldState, this._state, '检测到NSFW内容');
+            this.transition(State.PENDING_SWITCH, '检测到NSFW内容');
             return true;
         }
         if (this._state === State.PENDING_RESTORE) {
-            const oldState = this._state;
-            this._state = State.SWITCHED;
-            addStateTransitionLog(oldState, this._state, '恢复期间再次检测到NSFW，取消恢复');
+            this.transition(State.SWITCHED, '恢复期间再次检测到NSFW，取消恢复');
             return true;
         }
         // 已切换状态或待切换状态：保持不变
         return false;
     }
-
     /**
      * 检测到正常内容 → 如果需要恢复则标记
-     * @returns {boolean} 是否标记了待恢复
+     * @returns 是否标记了待恢复
      */
     onCleanDetected() {
         if (this._state === State.SWITCHED || this._state === State.PENDING_RESTORE) {
-            const oldState = this._state;
-            this._state = State.PENDING_RESTORE;
-            addStateTransitionLog(oldState, this._state, '检测到正常内容，准备恢复');
+            // PENDING_RESTORE 是 no-op (相同状态, transition 内部短路)
+            this.transition(State.PENDING_RESTORE, '检测到正常内容，准备恢复');
             return true;
         }
         if (this._state === State.PENDING_SWITCH) {
-            const oldState = this._state;
-            this._state = State.IDLE;
-            addStateTransitionLog(oldState, this._state, '切换期间检测到正常内容，取消切换');
+            this.transition(State.IDLE, '切换期间检测到正常内容，取消切换');
             return true;
         }
         return false;
     }
-
     /**
      * 检测失败或未检测到 → 根据当前状态决定
-     * @returns {boolean} 是否需要恢复
+     * @returns 是否需要恢复
      */
     onDetectionFailed() {
         if (this._state === State.SWITCHED) {
-            const oldState = this._state;
-            this._state = State.PENDING_RESTORE;
-            addStateTransitionLog(oldState, this._state, '检测失败，准备恢复原模型');
+            this.transition(State.PENDING_RESTORE, '检测失败，准备恢复原模型');
             return true;
         }
         return false;
     }
-
     /**
      * 切换操作成功执行后确认转换
-     * @returns {boolean}
      */
     onSwitchApplied() {
         if (this._state === State.PENDING_SWITCH) {
-            const oldState = this._state;
-            this._state = State.SWITCHED;
-            addStateTransitionLog(oldState, this._state, '切换操作已执行');
+            this.transition(State.SWITCHED, '切换操作已执行');
             return true;
         }
         return false;
     }
-
     /**
      * 恢复操作成功执行后确认转换
-     * @returns {boolean}
      */
     onRestoreApplied() {
         if (this._state === State.PENDING_RESTORE) {
-            const oldState = this._state;
-            this._state = State.IDLE;
-            addStateTransitionLog(oldState, this._state, '恢复操作已执行');
+            this.transition(State.IDLE, '恢复操作已执行');
             return true;
         }
         return false;
     }
-
     /**
      * 操作失败时回退到空闲状态
+     *
+     * 为 SwitcherCoordinator 预留: safety_timeout / plugin_off 等异常路径
+     * 由协调器主动调用以保持状态机一致 (Oracle 建议)。
      */
     onOperationAborted() {
         if (this._state === State.PENDING_SWITCH || this._state === State.PENDING_RESTORE) {
-            const oldState = this._state;
-            this._state = State.IDLE;
-            addStateTransitionLog(oldState, this._state, '操作失败，回退到空闲');
+            this.transition(State.IDLE, '操作失败，回退到空闲');
         }
     }
-
     /**
      * 手动恢复了模型 → 回到空闲
      */
     onManualRestore() {
-        const oldState = this._state;
-        this._state = State.IDLE;
-        addStateTransitionLog(oldState, this._state, '手动恢复');
+        // 即使当前已 IDLE 也走 transition (内部短路), 保证日志一致
+        if (this._state !== State.IDLE) {
+            this.transition(State.IDLE, '手动恢复');
+        }
     }
-
     /**
      * 获取状态描述（供日志显示）
-     * @returns {string}
      */
     getStateDescription() {
         const labels = {
@@ -206,11 +221,10 @@ export class ModelStateMachine {
         return labels[this._state] || this._state;
     }
 }
-
 /**
  * 创建并返回一个单例状态机
- * @returns {ModelStateMachine}
  */
 export function createStateMachine() {
     return new ModelStateMachine();
 }
+//# sourceMappingURL=state.js.map

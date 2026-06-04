@@ -1,0 +1,20 @@
+{
+    "name": "sillytavern-auto-model-switcher",
+    "version": "1.2.0",
+    "private": true,
+    "description": "SillyTavern NSFW 模型自动切换器 — 通过 fetch 拦截 + ES6 Proxy 实现无缝切换",
+    "type": "module",
+    "scripts": {
+        "build": "tsc",
+        "dev": "tsc --watch",
+        "check": "tsc --noEmit",
+        "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
+    },
+    "devDependencies": {
+        "@types/jquery": "^3.5.34",
+        "typescript": "^5.9.3"
+    },
+    "author": "ICU-bit",
+    "license": "AGPL-3.0",
+    "homepage": "https://github.com/ICU-bit/sillytavern-auto-model-switcher"
+}

@@ -19,13 +19,43 @@
 /**
  * NSFW 模型切换器 - 日志模块
  * 管理运行日志的存储和展示
- * 
+ *
  * 日志级别: debug < info < warn < error
  * debug模式下记录所有级别，非debug模式下只记录 info 及以上
  */
 
-let logs = [];
-let renderCallback = null;
+// ===== 类型定义 =====
+
+/** 日志级别 */
+export type LogLevelName = 'debug' | 'info' | 'warn' | 'error';
+
+/** 日志类型（向后兼容，含 'success'/'warning' 等 UI 语义） */
+export type LogType = 'info' | 'success' | 'warning' | 'error';
+
+/** 单条日志条目 */
+export interface LogEntry {
+    timestamp: string;
+    message: string;
+    type: LogType;
+    level: LogLevelName;
+    data: unknown | null;
+}
+
+/** 日志渲染回调：可选传入新增日志条目（用于增量渲染） */
+export type RenderCallback = (logs: LogEntry[], newLog?: LogEntry) => void;
+
+/** API 错误对象（addApiErrorLog 接受的最小形状） */
+interface ApiErrorLike {
+    name: string;
+    message: string;
+    stack?: string;
+    [key: string]: unknown;
+}
+
+// ===== 模块状态 =====
+
+let logs: LogEntry[] = [];
+let renderCallback: RenderCallback | null = null;
 
 /** 日志级别常量 */
 export const LogLevel = Object.freeze({
@@ -33,10 +63,10 @@ export const LogLevel = Object.freeze({
     INFO: 'info',
     WARN: 'warn',
     ERROR: 'error',
-});
+} as const);
 
 /** 日志级别优先级（数值越大优先级越高） */
-const LOG_LEVEL_PRIORITY = {
+const LOG_LEVEL_PRIORITY: Record<LogLevelName, number> = {
     debug: 0,
     info: 1,
     warn: 2,
@@ -44,7 +74,7 @@ const LOG_LEVEL_PRIORITY = {
 };
 
 /** 日志类型到级别的映射（向后兼容） */
-const TYPE_TO_LEVEL = {
+const TYPE_TO_LEVEL: Record<LogType, LogLevelName> = {
     'info': 'info',
     'success': 'info',
     'warning': 'warn',
@@ -55,16 +85,16 @@ const TYPE_TO_LEVEL = {
 const STORAGE_KEY = 'nsfw_switcher_logs';
 
 // localStorage 写入防抖（避免高频写入）
-var saveTimeout = null;
-function debouncedSave() {
+let saveTimeout: ReturnType<typeof setTimeout> | null = null;
+function debouncedSave(): void {
     if (saveTimeout) clearTimeout(saveTimeout);
-    saveTimeout = setTimeout(function() { saveLogsToStorage(); }, 1000);
+    saveTimeout = setTimeout(function () { saveLogsToStorage(); }, 1000);
 }
 
 /**
  * 将日志保存到 localStorage
  */
-function saveLogsToStorage() {
+function saveLogsToStorage(): void {
     try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(logs));
     } catch (e) {
@@ -74,13 +104,21 @@ function saveLogsToStorage() {
 
 /**
  * 从 localStorage 加载日志
+ *
+ * M5 修复: 校验解析结果是数组, 防止外部脚本污染 localStorage 后
+ * 导致 logs 变成非数组 → 后续 logs.unshift 抛 TypeError → 整个日志
+ * 模块失效, 连带 addLog 全部失败。
  */
-function loadLogsFromStorage() {
+function loadLogsFromStorage(): void {
     try {
         const stored = localStorage.getItem(STORAGE_KEY);
-        if (stored) {
-            logs = JSON.parse(stored);
+        if (!stored) return;
+        const parsed = JSON.parse(stored);
+        if (!Array.isArray(parsed)) {
+            // 数据已被污染, 静默丢弃并不写回 (避免破坏其他数据)
+            return;
         }
+        logs = parsed;
     } catch (e) {
         // 解析失败或 localStorage 不可用，静默失败
     }
@@ -89,7 +127,7 @@ function loadLogsFromStorage() {
 /**
  * 初始化日志（从 localStorage 加载，应在启动时调用一次）
  */
-export function initLogs() {
+export function initLogs(): void {
     loadLogsFromStorage();
     if (renderCallback) {
         renderCallback(logs);
@@ -97,50 +135,55 @@ export function initLogs() {
 }
 /**
  * 注册渲染回调，当日志更新时自动刷新 UI
- * @param {Function} callback - 接收 logs 数组的渲染函数
+ * @param callback - 接收 logs 数组的渲染函数
  */
-export function setRenderCallback(callback) {
+export function setRenderCallback(callback: RenderCallback): void {
     renderCallback = callback;
 }
 
 /**
  * 添加一条日志
- * @param {string} message - 日志内容
- * @param {'info'|'success'|'warning'|'error'} type - 日志类型（向后兼容）
- * @param {'debug'|'info'|'warn'|'error'} [level] - 日志级别（可选，默认根据type推断）
- * @param {object} [data] - 附加数据（如请求/响应详情）
+ * @param message - 日志内容
+ * @param type - 日志类型（向后兼容）
+ * @param level - 日志级别（可选，默认根据 type 推断）
+ * @param data - 附加数据（如请求/响应详情）
  */
-export function addLog(message, type = 'info', level, data) {
-    // 向后兼容：如果level未指定，根据type推断
+export function addLog(
+    message: string,
+    type: LogType = 'info',
+    level?: LogLevelName,
+    data?: unknown,
+): void {
+    // 向后兼容：如果 level 未指定，根据 type 推断
     if (!level) {
         level = TYPE_TO_LEVEL[type] || 'info';
     }
-    
-    const timestamp = new Date().toLocaleTimeString('zh-CN', { 
-        hour12: false, 
-        hour: '2-digit', 
-        minute: '2-digit', 
+
+    const timestamp = new Date().toLocaleTimeString('zh-CN', {
+        hour12: false,
+        hour: '2-digit',
+        minute: '2-digit',
         second: '2-digit',
-        fractionalSecondDigits: 3 
+        fractionalSecondDigits: 3,
     });
-    
-    const logEntry = { 
-        timestamp, 
-        message, 
-        type, 
+
+    const logEntry: LogEntry = {
+        timestamp,
+        message,
+        type,
         level,
-        data: data || null 
+        data: data ?? null,
     };
-    
+
     logs.unshift(logEntry);
-    
+
     // 限制日志数量（最多200条）
     if (logs.length > 200) {
         logs = logs.slice(0, 200);
     }
-    
+
     debouncedSave();
-    
+
     // 控制台输出
     const consoleMsg = `[NSFW模型切换器][${level.toUpperCase()}] ${message}`;
     switch (level) {
@@ -149,7 +192,7 @@ export function addLog(message, type = 'info', level, data) {
         case 'error': console.error(consoleMsg, data || ''); break;
         default: console.log(consoleMsg, data || '');
     }
-    
+
     if (renderCallback) {
         renderCallback(logs, logEntry);
     }
@@ -157,21 +200,22 @@ export function addLog(message, type = 'info', level, data) {
 
 /**
  * 添加调试日志（仅在debug模式下显示）
- * @param {string} message - 日志内容
- * @param {object} [data] - 附加数据
+ * @param message - 日志内容
+ * @param data - 附加数据
  */
-export function addDebugLog(message, data) {
+export function addDebugLog(message: string, data?: unknown): void {
     addLog(message, 'info', 'debug', data);
 }
 
 /**
  * 添加API请求日志
- * @param {string} url - 请求URL
- * @param {string} method - 请求方法
- * @param {object} headers - 请求头（敏感信息已隐藏）
- * @param {object} body - 请求体
  */
-export function addApiRequestLog(url, method, headers, body) {
+export function addApiRequestLog(
+    url: string,
+    method: string,
+    headers: Record<string, unknown>,
+    body: unknown,
+): void {
     addLog(`API请求: ${method} ${url}`, 'info', 'debug', {
         type: 'api_request',
         url,
@@ -183,15 +227,16 @@ export function addApiRequestLog(url, method, headers, body) {
 
 /**
  * 添加API响应日志
- * @param {string} url - 请求URL
- * @param {number} status - 响应状态码
- * @param {object} headers - 响应头
- * @param {object} body - 响应体
- * @param {number} duration - 请求耗时（毫秒）
  */
-export function addApiResponseLog(url, status, headers, body, duration) {
-    const level = status >= 400 ? 'error' : 'debug';
-    addLog(`API响应: ${status} ${url} (${duration}ms)`, 
+export function addApiResponseLog(
+    url: string,
+    status: number,
+    headers: Record<string, unknown>,
+    body: unknown,
+    duration: number,
+): void {
+    const level: LogLevelName = status >= 400 ? 'error' : 'debug';
+    addLog(`API响应: ${status} ${url} (${duration}ms)`,
         status >= 400 ? 'error' : 'info', level, {
         type: 'api_response',
         url,
@@ -204,11 +249,12 @@ export function addApiResponseLog(url, status, headers, body, duration) {
 
 /**
  * 添加API错误日志
- * @param {string} url - 请求URL
- * @param {Error} error - 错误对象
- * @param {number} [duration] - 请求耗时（毫秒）
  */
-export function addApiErrorLog(url, error, duration) {
+export function addApiErrorLog(
+    url: string,
+    error: ApiErrorLike,
+    duration?: number,
+): void {
     addLog(`API错误: ${url} - ${error.message}`, 'error', 'error', {
         type: 'api_error',
         url,
@@ -223,11 +269,12 @@ export function addApiErrorLog(url, error, duration) {
 
 /**
  * 添加状态转换日志
- * @param {string} fromState - 原状态
- * @param {string} toState - 目标状态
- * @param {string} reason - 转换原因
  */
-export function addStateTransitionLog(fromState, toState, reason) {
+export function addStateTransitionLog(
+    fromState: string,
+    toState: string,
+    reason: string,
+): void {
     addLog(`状态转换: ${fromState} → ${toState} (${reason})`, 'info', 'debug', {
         type: 'state_transition',
         fromState,
@@ -239,7 +286,7 @@ export function addStateTransitionLog(fromState, toState, reason) {
 /**
  * 清空所有日志
  */
-export function clearLogs() {
+export function clearLogs(): void {
     logs = [];
     saveLogsToStorage();
     if (renderCallback) {
@@ -249,25 +296,22 @@ export function clearLogs() {
 
 /**
  * 获取当前日志的浅拷贝
- * @param {string} [minLevel] - 最低日志级别（默认'debug'）
- * @returns {Array<{timestamp: string, message: string, type: string, level: string, data: object}>}
+ * @param minLevel - 最低日志级别（默认 'debug'）
  */
-export function getLogs(minLevel) {
+export function getLogs(minLevel?: LogLevelName): LogEntry[] {
     if (!minLevel) return [...logs];
-    
-    const minPriority = LOG_LEVEL_PRIORITY[minLevel] || 0;
+
+    const minPriority = LOG_LEVEL_PRIORITY[minLevel] ?? 0;
     return logs.filter(log => {
-        const priority = LOG_LEVEL_PRIORITY[log.level] || 0;
+        const priority = LOG_LEVEL_PRIORITY[log.level] ?? 0;
         return priority >= minPriority;
     });
 }
 
 /**
  * 导出日志为JSON字符串
- * @param {string} [minLevel] - 最低日志级别
- * @returns {string} JSON格式的日志
  */
-export function exportLogsAsJson(minLevel) {
+export function exportLogsAsJson(minLevel?: LogLevelName): string {
     const filteredLogs = getLogs(minLevel);
     return JSON.stringify({
         exportTime: new Date().toISOString(),
@@ -278,10 +322,8 @@ export function exportLogsAsJson(minLevel) {
 
 /**
  * 导出日志为文本字符串
- * @param {string} [minLevel] - 最低日志级别
- * @returns {string} 文本格式的日志
  */
-export function exportLogsAsText(minLevel) {
+export function exportLogsAsText(minLevel?: LogLevelName): string {
     const filteredLogs = getLogs(minLevel);
     const lines = filteredLogs.map(log => {
         const dataStr = log.data ? ` | ${JSON.stringify(log.data)}` : '';
@@ -292,40 +334,39 @@ export function exportLogsAsText(minLevel) {
 
 /**
  * 复制日志到剪贴板
- * @param {string} [format='text'] - 导出格式 ('text' 或 'json')
- * @param {string} [minLevel] - 最低日志级别
- * @returns {Promise<boolean>} 是否成功
+ * @param format - 导出格式（默认 'text'）
+ * @param minLevel - 最低日志级别
  */
-export async function copyLogsToClipboard(format, minLevel) {
+export async function copyLogsToClipboard(
+    format: 'text' | 'json' = 'text',
+    minLevel?: LogLevelName,
+): Promise<boolean> {
     try {
-        const content = format === 'json' 
-            ? exportLogsAsJson(minLevel) 
+        const content = format === 'json'
+            ? exportLogsAsJson(minLevel)
             : exportLogsAsText(minLevel);
-        
+
         await navigator.clipboard.writeText(content);
         addLog('日志已复制到剪贴板', 'success');
         return true;
     } catch (e) {
-        addLog('复制日志失败: ' + e.message, 'error');
+        const msg = e instanceof Error ? e.message : String(e);
+        addLog('复制日志失败: ' + msg, 'error');
         return false;
     }
 }
 
 /**
  * 转义 HTML 特殊字符（防 XSS）
- * @param {string} str
- * @returns {string}
  */
-function escapeHtml(str) {
+function escapeHtml(str: string): string {
     return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 /**
  * 生成单条日志 HTML
- * @param {object} log - 日志条目
- * @returns {string}
  */
-export function renderLogEntryHtml(log) {
+export function renderLogEntryHtml(log: LogEntry): string {
     return `<div class="nsfw-log-entry" data-level="${log.level}">` +
         `<span class="nsfw-log-timestamp">${escapeHtml(log.timestamp)}</span>` +
         `<span class="nsfw-log-level" data-level="${log.level}">[${log.level.toUpperCase()}]</span>` +
@@ -335,16 +376,18 @@ export function renderLogEntryHtml(log) {
 
 /**
  * 生成日志 HTML（供设置面板使用）
- * @param {Array} logsArray
- * @param {string} [minLevel='debug'] - 最低显示级别
- * @returns {string}
+ * @param logsArray - 日志数组（默认用模块内 logs）
+ * @param minLevel - 最低显示级别（默认 'debug'）
  */
-export function renderLogsHtml(logsArray, minLevel) {
+export function renderLogsHtml(
+    logsArray?: LogEntry[],
+    minLevel?: LogLevelName,
+): string {
     const items = logsArray || logs;
-    const minPriority = LOG_LEVEL_PRIORITY[minLevel || 'debug'] || 0;
+    const minPriority = LOG_LEVEL_PRIORITY[minLevel || 'debug'] ?? 0;
 
     const filteredItems = items.filter(log => {
-        const priority = LOG_LEVEL_PRIORITY[log.level] || 0;
+        const priority = LOG_LEVEL_PRIORITY[log.level] ?? 0;
         return priority >= minPriority;
     });
 

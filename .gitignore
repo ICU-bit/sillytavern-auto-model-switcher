@@ -14,6 +14,15 @@ desktop.ini
 # Node.js
 node_modules/
 npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# TypeScript 构建缓存
+*.tsbuildinfo
+
+# 注意：dist/ 必须提交（SillyTavern 加载 dist/index.js）
+# 见 manifest.json 的 "js" 字段
 
 # AI 工具配置
 .claude/

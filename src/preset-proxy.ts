@@ -1,0 +1,457 @@
+/**
+ * NSFW 模型切换器 (SillyTavern Auto Model Switcher)
+ * Copyright (C) 2025 ICU-bit
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+/**
+ * NSFW 模型切换器 - 预设代理模块
+ *
+ * 使用 JavaScript Proxy 实现"偷天换日"：
+ * - 扩展加载时，用 Proxy 包装 power_user 的 instruct/context/sysprompt/reasoning
+ * - NSFW 激活时，Proxy 的 get trap 返回覆盖值，原始对象不被修改
+ * - NSFW 关闭时，Proxy 返回原始值
+ *
+ * 这样 ST 的格式化流程读到的是我们的预设值，但 power_user 本身从未被修改。
+ */
+
+import { power_user } from '../../../../../scripts/power-user.js';
+import { addLog, addDebugLog } from './logger.js';
+
+// ===== 类型定义 =====
+
+/** 被代理的子对象类别 */
+export type ProxyCategory = 'instruct' | 'context' | 'sysprompt' | 'reasoning';
+
+/** 通用可索引对象（power_user 子对象的实际形状） */
+type IndexableObject = Record<string, unknown>;
+
+/** 覆盖值字典 (按类别分组) */
+interface OverrideMap {
+    instruct: IndexableObject;
+    context: IndexableObject;
+    sysprompt: IndexableObject;
+    reasoning: IndexableObject;
+}
+
+/** 模块开关字典（来自 settings 的 PresetModuleEnabledMap） */
+type ModuleSwitches = Record<string, boolean>;
+
+/** 预设原始数据（字段动态） */
+type PresetSource = Record<string, unknown>;
+
+/** 内部代理状态 */
+interface ProxyState {
+    active: boolean;
+    overrides: OverrideMap;
+    /** genParams 快照（用于恢复） */
+    originalGenParams: IndexableObject | null;
+    /** 安全超时定时器 */
+    safetyTimer: ReturnType<typeof setTimeout> | null;
+}
+
+// ===== 代理状态 =====
+
+const proxyState: ProxyState = {
+    active: false,
+    overrides: {
+        instruct: {},
+        context: {},
+        sysprompt: {},
+        reasoning: {},
+    },
+    originalGenParams: null,
+    safetyTimer: null,
+};
+
+// genParams 键名列表
+const GEN_PARAM_KEYS: string[] = [
+    'temperature', 'frequency_penalty', 'presence_penalty',
+    'top_p', 'top_k', 'top_a', 'min_p', 'repetition_penalty',
+    'openai_max_context', 'openai_max_tokens',
+];
+
+// context 全局字段（属于 power_user 顶层，不属于 power_user.context）
+const CONTEXT_GLOBAL_KEYS: string[] = ['always_force_name2', 'trim_sentences', 'single_line'];
+
+// 幂等标记，防止重复安装 Proxy
+//
+// 使用 Symbol.for('...') 注册全局 Symbol — 跨模块/跨浏览器热重载返回同一引用，
+// 既避免普通 Symbol 在热重载丢失的问题，又有 Symbol 独有的两大关键好处：
+//
+//   1. JSON.stringify() 自动跳过 Symbol 键
+//      → ST 把 power_user.instruct 序列化保存到磁盘 / localStorage 时,
+//        marker 不会被持久化, 用户卸载本插件后不会留下污染。
+//   2. structuredClone() 不复制 Symbol 键
+//      → model-switcher.takeSnapshot() 用 structuredClone(power_user.instruct)
+//        创建快照, 快照中天然不带 marker, Object.assign 回写时也不污染。
+//
+// (历史: 之前用字符串 '__nsfw_proxy_installed__', 通过 Proxy.set trap
+//  穿透到原始对象, 会被 ST 序列化保存, 卸载插件后永久残留。)
+const NSFW_PROXY_MARKER: unique symbol = Symbol.for('nsfw-auto-model-switcher.proxy-installed');
+
+// 安全超时时间（毫秒）
+const SAFETY_TIMEOUT_MS = 30000;
+
+/**
+ * Safety timeout 触发时的外部回调 (Phase 4 Batch B Step 4)
+ *
+ * 当 30s 内 Proxy 未被正常停用时, safetyTimer 触发会:
+ * 1. 调用此回调 (若已注册) → 让 SwitcherCoordinator 走 disable('safety_timeout')
+ *    路径, 同时关 fetch + 通知 state
+ * 2. 然后才调用本地 deactivateOverrides 兜底
+ *
+ * 调用方 (coordinator) 通过 setOnSafetyTimeout() 注册。
+ * 未注册时保持旧行为 (只关 Proxy, 不联动 fetch/state)。
+ */
+type SafetyTimeoutCallback = () => void;
+let onSafetyTimeout: SafetyTimeoutCallback | null = null;
+
+/**
+ * 注册 safety timeout 回调 (供 SwitcherCoordinator 注入)
+ */
+export function setOnSafetyTimeout(callback: SafetyTimeoutCallback | null): void {
+    onSafetyTimeout = callback;
+}
+
+// ===== Proxy 创建 =====
+
+/**
+ * 为 power_user 的子对象创建 Proxy
+ */
+function createSubObjectProxy(originalObj: IndexableObject, category: ProxyCategory): IndexableObject {
+    return new Proxy(originalObj, {
+        get: function (target, prop, receiver) {
+            // 如果 NSFW 激活且该属性有覆盖值，返回覆盖值
+            if (
+                proxyState.active &&
+                proxyState.overrides[category] &&
+                typeof prop === 'string' &&
+                prop in proxyState.overrides[category]
+            ) {
+                return proxyState.overrides[category][prop];
+            }
+            return Reflect.get(target, prop, receiver);
+        },
+        set: function (target, prop, value, receiver) {
+            // 写入穿透到原始对象（ST 预设加载仍正常工作）
+            return Reflect.set(target, prop, value, receiver);
+        },
+        has: function (target, prop) {
+            // 支持 'prop in obj' 操作符
+            if (
+                proxyState.active &&
+                proxyState.overrides[category] &&
+                typeof prop === 'string' &&
+                prop in proxyState.overrides[category]
+            ) {
+                return true;
+            }
+            return Reflect.has(target, prop);
+        },
+        ownKeys: function (target) {
+            return Reflect.ownKeys(target);
+        },
+        getOwnPropertyDescriptor: function (target, prop) {
+            return Reflect.getOwnPropertyDescriptor(target, prop);
+        },
+    });
+}
+
+// ===== 初始化 =====
+
+/**
+ * 安装 Proxy 到 power_user 的四个子对象
+ * 应在扩展加载时调用一次
+ */
+/** 帮助类型: 允许在对象上读写 NSFW_PROXY_MARKER (Symbol) */
+type MarkerCarrier = { [NSFW_PROXY_MARKER]?: boolean };
+
+/** 历史遗留的字符串 marker (v1.1.0 及之前)，需要清理掉避免污染 ST 持久化 */
+const LEGACY_STRING_MARKER = '__nsfw_proxy_installed__';
+
+/**
+ * 清理旧版本字符串 marker 残留
+ *
+ * v1.1.0 及之前用字符串 marker, 通过 Proxy.set 穿透写入原始对象。
+ * 升级到本版本后, 残留 marker 仍会被 ST 序列化保存。
+ * 此函数在 initProxies 前调用一次, 把残留 marker 从所有相关对象上删除。
+ */
+function purgeLegacyMarker(): void {
+    const targets = [power_user.instruct, power_user.context, power_user.sysprompt, power_user.reasoning];
+    let purged = 0;
+    for (const t of targets) {
+        if (t && typeof t === 'object' && LEGACY_STRING_MARKER in t) {
+            delete (t as IndexableObject)[LEGACY_STRING_MARKER];
+            purged++;
+        }
+    }
+    if (purged > 0) {
+        addLog('已清理 ' + purged + ' 处历史 marker 残留', 'info');
+    }
+}
+
+export function initProxies(): void {
+    // 先清理旧字符串 marker（一次性 migration, 升级安全网）
+    purgeLegacyMarker();
+
+    // 幂等检查：防止重复安装（浏览器热重载）
+    const instruct = power_user.instruct as MarkerCarrier;
+    if (instruct[NSFW_PROXY_MARKER]) {
+        addDebugLog('Proxy 已安装，跳过重复初始化');
+        return;
+    }
+
+    power_user.instruct = createSubObjectProxy(power_user.instruct as IndexableObject, 'instruct');
+    power_user.context = createSubObjectProxy(power_user.context as IndexableObject, 'context');
+    power_user.sysprompt = createSubObjectProxy(power_user.sysprompt as IndexableObject, 'sysprompt');
+    power_user.reasoning = createSubObjectProxy(power_user.reasoning as IndexableObject, 'reasoning');
+
+    // 标记已安装 (Symbol 不会被 JSON.stringify / structuredClone 持久化)
+    (power_user.instruct as MarkerCarrier)[NSFW_PROXY_MARKER] = true;
+
+    addLog('预设代理已安装', 'info', 'debug');
+}
+
+// ===== 覆盖激活/停用 =====
+
+/**
+ * 从预设数据中提取各模块的覆盖值
+ */
+function buildOverrides(preset: PresetSource, mods: ModuleSwitches): void {
+    // 清空现有覆盖
+    proxyState.overrides = {
+        instruct: {},
+        context: {},
+        sysprompt: {},
+        reasoning: {},
+    };
+
+    if (!preset) return;
+
+    // Instruct 模块
+    if (mods.instruct !== false) {
+        const instructFields = [
+            'input_sequence', 'output_sequence', 'system_sequence', 'stop_sequence',
+            'wrap', 'names_behavior', 'activation_regex', 'output_suffix', 'input_suffix',
+            'system_suffix', 'first_output_sequence', 'last_output_sequence',
+            'system_same_as_user', 'sequences_as_stop_strings', 'skip_examples',
+            'macro', 'user_alignment_message', 'last_system_sequence',
+            'first_input_sequence', 'last_input_sequence',
+            'story_string_prefix', 'story_string_suffix',
+        ];
+        for (let i = 0; i < instructFields.length; i++) {
+            const key = instructFields[i];
+            if (preset[key] !== undefined && mods['instruct_' + key] !== false) {
+                proxyState.overrides.instruct[key] = preset[key];
+            }
+        }
+        // 特殊处理 names_behavior（数字转字符串）
+        if (preset.names_behavior !== undefined && mods['instruct_names_behavior'] !== false) {
+            const nb = preset.names_behavior;
+            proxyState.overrides.instruct.names_behavior = typeof nb === 'number'
+                ? (['none', 'force', 'always'])[nb] || 'force'
+                : nb;
+        }
+        // 特殊处理 wrap_in_quotes
+        if (preset.wrap_in_quotes !== undefined && mods['instruct_wrap'] !== false) {
+            proxyState.overrides.instruct.wrap = preset.wrap_in_quotes;
+        }
+    }
+
+    // Context 模块
+    if (mods.context !== false) {
+        const contextFields = [
+            'story_string', 'chat_start', 'example_separator',
+            'use_stop_strings', 'names_as_stop_strings',
+            'story_string_position', 'story_string_depth', 'story_string_role',
+        ];
+        for (let i = 0; i < contextFields.length; i++) {
+            const key = contextFields[i];
+            if (preset[key] !== undefined && mods['context_' + key] !== false) {
+                proxyState.overrides.context[key] = preset[key];
+            }
+        }
+    }
+
+    // Sysprompt 模块
+    if (mods.sysprompt !== false) {
+        const syspromptFields = ['content', 'post_history'];
+        for (let i = 0; i < syspromptFields.length; i++) {
+            const key = syspromptFields[i];
+            if (preset[key] !== undefined && mods['sysprompt_' + key] !== false) {
+                proxyState.overrides.sysprompt[key] = preset[key];
+            }
+        }
+    }
+
+    // Reasoning 模块
+    if (mods.reasoning !== false) {
+        const reasoningFields = ['prefix', 'suffix', 'separator'];
+        for (let i = 0; i < reasoningFields.length; i++) {
+            const key = reasoningFields[i];
+            if (preset[key] !== undefined && mods['reasoning_' + key] !== false) {
+                proxyState.overrides.reasoning[key] = preset[key];
+            }
+        }
+    }
+}
+
+/**
+ * 激活 NSFW 预设覆盖
+ */
+export function activateOverrides(presetData: PresetSource, mods?: ModuleSwitches): void {
+    // 构建覆盖数据（不修改原始对象）
+    buildOverrides(presetData, mods || {});
+
+    // 保存 genParams 快照
+    proxyState.originalGenParams = {};
+    for (let i = 0; i < GEN_PARAM_KEYS.length; i++) {
+        const key = GEN_PARAM_KEYS[i];
+        if (power_user[key] !== undefined) {
+            proxyState.originalGenParams[key] = power_user[key];
+        }
+    }
+    // 保存 context 全局字段快照
+    for (let i = 0; i < CONTEXT_GLOBAL_KEYS.length; i++) {
+        const key = CONTEXT_GLOBAL_KEYS[i];
+        if (power_user[key] !== undefined) {
+            proxyState.originalGenParams[key] = power_user[key];
+        }
+    }
+
+    // 写入 genParams 到 power_user（ST 格式化需要）
+    const genParams = extractGenParams(presetData);
+    if (genParams) {
+        Object.keys(genParams).forEach(function (key) {
+            if (key !== 'stream_openai') power_user[key] = genParams[key];
+        });
+    }
+
+    // 写入 context 全局字段到 power_user
+    const modsResolved = mods || {};
+    for (let i = 0; i < CONTEXT_GLOBAL_KEYS.length; i++) {
+        const key = CONTEXT_GLOBAL_KEYS[i];
+        if (presetData[key] !== undefined && modsResolved['context_' + key] !== false) {
+            power_user[key] = presetData[key];
+        }
+    }
+
+    // 激活 Proxy
+    proxyState.active = true;
+
+    // 启动安全超时看门狗
+    startSafetyTimer();
+
+    addDebugLog('预设覆盖已激活');
+}
+
+/**
+ * 停用 NSFW 预设覆盖
+ * 幂等：多次调用安全
+ */
+export function deactivateOverrides(): void {
+    // 如果未激活，直接返回
+    if (!proxyState.active && !proxyState.originalGenParams) {
+        return;
+    }
+
+    // 停用 Proxy
+    proxyState.active = false;
+
+    // 清空覆盖数据
+    proxyState.overrides = {
+        instruct: {},
+        context: {},
+        sysprompt: {},
+        reasoning: {},
+    };
+
+    // 恢复 genParams
+    if (proxyState.originalGenParams) {
+        const snapshot = proxyState.originalGenParams;
+        Object.keys(snapshot).forEach(function (key) {
+            power_user[key] = snapshot[key];
+        });
+        proxyState.originalGenParams = null;
+    }
+
+    // 清除安全超时
+    clearSafetyTimer();
+
+    addDebugLog('预设覆盖已停用');
+}
+
+/**
+ * 检查覆盖是否激活
+ */
+export function isOverridesActive(): boolean {
+    return proxyState.active;
+}
+
+// ===== 安全机制 =====
+
+/**
+ * 启动安全超时看门狗
+ * 如果超过 SAFETY_TIMEOUT_MS 仍未停用，自动停用
+ */
+function startSafetyTimer(): void {
+    clearSafetyTimer();
+    proxyState.safetyTimer = setTimeout(function () {
+        if (proxyState.active) {
+            addLog('安全超时：预设覆盖超过 ' + (SAFETY_TIMEOUT_MS / 1000) + ' 秒未停用，自动恢复', 'warning');
+            // Phase 4 Batch B Step 4: 优先通知 coordinator (会同时关 fetch + state)
+            // 若未注册回调, 走旧行为 (只关 Proxy)
+            if (onSafetyTimeout) {
+                try {
+                    onSafetyTimeout();
+                } catch (e) {
+                    const msg = e instanceof Error ? e.message : String(e);
+                    addLog('safety timeout 回调抛错: ' + msg, 'error');
+                    // 即使回调失败也要兜底关 Proxy
+                    deactivateOverrides();
+                }
+            } else {
+                deactivateOverrides();
+            }
+        }
+    }, SAFETY_TIMEOUT_MS);
+}
+
+/**
+ * 清除安全超时定时器
+ */
+function clearSafetyTimer(): void {
+    if (proxyState.safetyTimer) {
+        clearTimeout(proxyState.safetyTimer);
+        proxyState.safetyTimer = null;
+    }
+}
+
+// ===== 辅助函数 =====
+
+/**
+ * 从预设中提取生成参数
+ */
+function extractGenParams(preset: PresetSource): IndexableObject | null {
+    if (!preset) return null;
+    const params: IndexableObject = {};
+    const genKeys = GEN_PARAM_KEYS.concat(['stream_openai']);
+    for (let i = 0; i < genKeys.length; i++) {
+        const key = genKeys[i];
+        if (preset[key] !== undefined) params[key] = preset[key];
+    }
+    return Object.keys(params).length ? params : null;
+}
