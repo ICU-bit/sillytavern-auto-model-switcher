@@ -87,8 +87,20 @@ const GEN_PARAM_KEYS: string[] = [
 const CONTEXT_GLOBAL_KEYS: string[] = ['always_force_name2', 'trim_sentences', 'single_line'];
 
 // 幂等标记，防止重复安装 Proxy
-// 使用字符串而非 Symbol — Symbol 在模块热重载时会创建新值，导致标记失效
-const NSFW_PROXY_MARKER = '__nsfw_proxy_installed__';
+//
+// 使用 Symbol.for('...') 注册全局 Symbol — 跨模块/跨浏览器热重载返回同一引用，
+// 既避免普通 Symbol 在热重载丢失的问题，又有 Symbol 独有的两大关键好处：
+//
+//   1. JSON.stringify() 自动跳过 Symbol 键
+//      → ST 把 power_user.instruct 序列化保存到磁盘 / localStorage 时,
+//        marker 不会被持久化, 用户卸载本插件后不会留下污染。
+//   2. structuredClone() 不复制 Symbol 键
+//      → model-switcher.takeSnapshot() 用 structuredClone(power_user.instruct)
+//        创建快照, 快照中天然不带 marker, Object.assign 回写时也不污染。
+//
+// (历史: 之前用字符串 '__nsfw_proxy_installed__', 通过 Proxy.set trap
+//  穿透到原始对象, 会被 ST 序列化保存, 卸载插件后永久残留。)
+const NSFW_PROXY_MARKER: unique symbol = Symbol.for('nsfw-auto-model-switcher.proxy-installed');
 
 // 安全超时时间（毫秒）
 const SAFETY_TIMEOUT_MS = 30000;
@@ -164,9 +176,39 @@ function createSubObjectProxy(originalObj: IndexableObject, category: ProxyCateg
  * 安装 Proxy 到 power_user 的四个子对象
  * 应在扩展加载时调用一次
  */
+/** 帮助类型: 允许在对象上读写 NSFW_PROXY_MARKER (Symbol) */
+type MarkerCarrier = { [NSFW_PROXY_MARKER]?: boolean };
+
+/** 历史遗留的字符串 marker (v1.1.0 及之前)，需要清理掉避免污染 ST 持久化 */
+const LEGACY_STRING_MARKER = '__nsfw_proxy_installed__';
+
+/**
+ * 清理旧版本字符串 marker 残留
+ *
+ * v1.1.0 及之前用字符串 marker, 通过 Proxy.set 穿透写入原始对象。
+ * 升级到本版本后, 残留 marker 仍会被 ST 序列化保存。
+ * 此函数在 initProxies 前调用一次, 把残留 marker 从所有相关对象上删除。
+ */
+function purgeLegacyMarker(): void {
+    const targets = [power_user.instruct, power_user.context, power_user.sysprompt, power_user.reasoning];
+    let purged = 0;
+    for (const t of targets) {
+        if (t && typeof t === 'object' && LEGACY_STRING_MARKER in t) {
+            delete (t as IndexableObject)[LEGACY_STRING_MARKER];
+            purged++;
+        }
+    }
+    if (purged > 0) {
+        addLog('已清理 ' + purged + ' 处历史 marker 残留', 'info');
+    }
+}
+
 export function initProxies(): void {
+    // 先清理旧字符串 marker（一次性 migration, 升级安全网）
+    purgeLegacyMarker();
+
     // 幂等检查：防止重复安装（浏览器热重载）
-    const instruct = power_user.instruct as IndexableObject;
+    const instruct = power_user.instruct as MarkerCarrier;
     if (instruct[NSFW_PROXY_MARKER]) {
         addDebugLog('Proxy 已安装，跳过重复初始化');
         return;
@@ -177,8 +219,8 @@ export function initProxies(): void {
     power_user.sysprompt = createSubObjectProxy(power_user.sysprompt as IndexableObject, 'sysprompt');
     power_user.reasoning = createSubObjectProxy(power_user.reasoning as IndexableObject, 'reasoning');
 
-    // 标记已安装
-    (power_user.instruct as IndexableObject)[NSFW_PROXY_MARKER] = true;
+    // 标记已安装 (Symbol 不会被 JSON.stringify / structuredClone 持久化)
+    (power_user.instruct as MarkerCarrier)[NSFW_PROXY_MARKER] = true;
 
     addLog('预设代理已安装', 'info', 'debug');
 }
