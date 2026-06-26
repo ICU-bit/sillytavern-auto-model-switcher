@@ -55,7 +55,7 @@ export async function detectNSFW(content, externalSignal) {
                     content: prompt,
                 }],
             temperature: 0.0,
-            max_tokens: 5,
+            max_tokens: 500,
         };
         const headers = {
             'Content-Type': 'application/json',

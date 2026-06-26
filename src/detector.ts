@@ -74,7 +74,7 @@ export async function detectNSFW(
                 content: prompt,
             }],
             temperature: 0.0,
-            max_tokens: 5,
+            max_tokens: 500,
         };
 
         const headers: Record<string, string> = {
