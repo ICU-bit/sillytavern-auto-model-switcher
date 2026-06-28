@@ -1,20 +1,4 @@
-/**
- * NSFW 模型切换器 (SillyTavern Auto Model Switcher)
- * Copyright (C) 2025 ICU-bit
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
- */
+// SPDX-License-Identifier: AGPL-3.0-only
 /**
  * NSFW 模型切换器 - 直接 API 调用模块 (Plan B)
  *
@@ -26,7 +10,8 @@
  * 完全绕过 ST 的设置系统，不再修改 oai_settings。
  */
 import { loadSettings } from './settings.js';
-import { addLog, addApiRequestLog, addApiResponseLog, addApiErrorLog } from './logger.js';
+import { addLog } from './logger.js';
+import { normalizeApiUrl } from './detector.js';
 // ===== 模块状态 =====
 // ST 的聊天补全 API 端点路径特征
 // 修复: 原 '/api/openai/' 为前缀子串匹配, 会误伤
@@ -228,7 +213,7 @@ async function redirectToTarget(originalBody, originalOptions) {
     if (safeHeaders['Authorization']) {
         safeHeaders['Authorization'] = 'Bearer ***';
     }
-    addApiRequestLog(targetUrl, 'POST', safeHeaders, directBody);
+    addLog(`API请求: POST ${targetUrl}`, 'info', 'debug');
     const startTime = Date.now();
     // ST 已格式化完毕，请求被接管 → 立即恢复原始预设
     if (onRequestRedirected) {
@@ -267,11 +252,8 @@ async function redirectToTarget(originalBody, originalOptions) {
                 catch (e) { /* 保持文本格式 */ }
             }
             catch (e) { /* 忽略读取错误 */ }
-            addApiErrorLog(targetUrl, {
-                name: 'HttpError',
-                message: 'HTTP ' + response.status,
-            }, duration);
-            addApiResponseLog(targetUrl, response.status, {}, errorBody, duration);
+            addLog(`API错误: HTTP ${response.status} (${duration}ms)`, 'error', 'error');
+            addLog(`API响应: ${response.status} ${targetUrl} (${duration}ms)`, 'error', 'debug');
             return null;
         }
         // 读取响应体
@@ -285,7 +267,7 @@ async function redirectToTarget(originalBody, originalOptions) {
             catch (e) { /* 保持文本格式 */ }
         }
         catch (e) { /* 忽略读取错误 */ }
-        addApiResponseLog(targetUrl, 200, {}, responseBody, duration);
+        addLog(`API响应: 200 ${targetUrl} (${duration}ms)`, 'info', 'debug');
         addLog('直接API调用成功: ' + targetModel, 'success');
         return response;
     }
@@ -309,25 +291,8 @@ async function redirectToTarget(originalBody, originalOptions) {
             errorCode = 'CORS';
         }
         addLog('直接API调用失败 [' + errorCode + ']: ' + errorMessage + ' (模型: ' + targetModel + ', 耗时: ' + duration + 'ms)', 'error');
-        addApiErrorLog(targetUrl, {
-            name: err.name,
-            message: errorMessage,
-            code: errorCode,
-            targetModel: targetModel,
-        }, duration);
+        addLog(`API错误: ${targetUrl} - ${errorMessage}`, 'error');
         return null;
     }
-}
-/**
- * 标准化 API URL，确保以 /chat/completions 结尾
- */
-function normalizeApiUrl(url) {
-    if (!url)
-        return url;
-    url = url.replace(/\/+$/, '');
-    if (url.indexOf('/chat/completions') === -1) {
-        url += '/chat/completions';
-    }
-    return url;
 }
 //# sourceMappingURL=direct-api.js.map

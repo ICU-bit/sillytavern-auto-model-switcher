@@ -1,20 +1,4 @@
-/**
- * NSFW 模型切换器 (SillyTavern Auto Model Switcher)
- * Copyright (C) 2025 ICU-bit
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
- */
+// SPDX-License-Identifier: AGPL-3.0-only
 
 /**
  * NSFW 模型切换器 - 直接 API 调用模块 (Plan B)
@@ -28,7 +12,8 @@
  */
 
 import { loadSettings } from './settings.js';
-import { addLog, addApiRequestLog, addApiResponseLog, addApiErrorLog } from './logger.js';
+import { addLog, addDebugLog } from './logger.js';
+import { normalizeApiUrl } from './detector.js';
 
 // ===== 类型定义 =====
 
@@ -272,7 +257,7 @@ async function redirectToTarget(
     if (safeHeaders['Authorization']) {
         safeHeaders['Authorization'] = 'Bearer ***';
     }
-    addApiRequestLog(targetUrl, 'POST', safeHeaders, directBody);
+    addLog(`API请求: POST ${targetUrl}`, 'info', 'debug');
 
     const startTime = Date.now();
 
@@ -315,11 +300,8 @@ async function redirectToTarget(
                 try { errorBody = JSON.parse(errorBody as string); } catch (e) { /* 保持文本格式 */ }
             } catch (e) { /* 忽略读取错误 */ }
 
-            addApiErrorLog(targetUrl, {
-                name: 'HttpError',
-                message: 'HTTP ' + response.status,
-            }, duration);
-            addApiResponseLog(targetUrl, response.status, {}, errorBody, duration);
+            addLog(`API错误: HTTP ${response.status} (${duration}ms)`, 'error', 'error');
+            addLog(`API响应: ${response.status} ${targetUrl} (${duration}ms)`, 'error', 'debug');
             return null;
         }
 
@@ -331,7 +313,7 @@ async function redirectToTarget(
             try { responseBody = JSON.parse(responseBody as string); } catch (e) { /* 保持文本格式 */ }
         } catch (e) { /* 忽略读取错误 */ }
 
-        addApiResponseLog(targetUrl, 200, {}, responseBody, duration);
+        addLog(`API响应: 200 ${targetUrl} (${duration}ms)`, 'info', 'debug');
         addLog('直接API调用成功: ' + targetModel, 'success');
         return response;
     } catch (e) {
@@ -354,24 +336,9 @@ async function redirectToTarget(
         }
 
         addLog('直接API调用失败 [' + errorCode + ']: ' + errorMessage + ' (模型: ' + targetModel + ', 耗时: ' + duration + 'ms)', 'error');
-        addApiErrorLog(targetUrl, {
-            name: err.name,
-            message: errorMessage,
-            code: errorCode,
-            targetModel: targetModel,
-        }, duration);
+        addLog(`API错误: ${targetUrl} - ${errorMessage}`, 'error');
         return null;
     }
 }
 
-/**
- * 标准化 API URL，确保以 /chat/completions 结尾
- */
-function normalizeApiUrl(url: string): string {
-    if (!url) return url;
-    url = url.replace(/\/+$/, '');
-    if (url.indexOf('/chat/completions') === -1) {
-        url += '/chat/completions';
-    }
-    return url;
-}
+

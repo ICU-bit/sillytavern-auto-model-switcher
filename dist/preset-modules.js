@@ -1,20 +1,4 @@
-/**
- * NSFW 模型切换器 (SillyTavern Auto Model Switcher)
- * Copyright (C) 2025 ICU-bit
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
- */
+// SPDX-License-Identifier: AGPL-3.0-only
 /**
  * NSFW 模型切换器 - 预设模块定义 + 渲染
  *
@@ -26,7 +10,7 @@
  * - renderPresetModulesHtml: 生成预设模块树 HTML
  * - buildDefaultEnabledModules: 为新导入的预设生成默认全开的模块字典
  */
-import { escapeHtml } from './utils.js';
+import { escapeHtml } from './logger.js';
 /**
  * 6 个预设模块的元数据 (从原 index.ts L40-48 整体迁出)
  */

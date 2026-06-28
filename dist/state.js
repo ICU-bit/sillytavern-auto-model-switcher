@@ -1,20 +1,4 @@
-/**
- * NSFW 模型切换器 (SillyTavern Auto Model Switcher)
- * Copyright (C) 2025 ICU-bit
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
- */
+// SPDX-License-Identifier: AGPL-3.0-only
 /**
  * NSFW 模型切换器 - 状态机模块
  *
@@ -33,7 +17,7 @@
  *   所有内部状态变更现在统一通过 private transition() 调用, 保证所有路径
  *   都会触发 hook。
  */
-import { addStateTransitionLog } from './logger.js';
+import { addLog } from './logger.js';
 /** 状态常量 */
 export const State = Object.freeze({
     /** 空闲状态，无待处理动作 */
@@ -102,7 +86,7 @@ export class ModelStateMachine {
         if (from === next)
             return;
         this._state = next;
-        addStateTransitionLog(from, next, reason);
+        addLog(`状态转换: ${from} → ${next} (${reason})`, 'info', 'debug');
         // 通知订阅者
         const ctx = { from, to: next, reason };
         for (let i = 0; i < this._listeners.length; i++) {

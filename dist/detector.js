@@ -1,28 +1,12 @@
-/**
- * NSFW 模型切换器 (SillyTavern Auto Model Switcher)
- * Copyright (C) 2025 ICU-bit
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
- */
+// SPDX-License-Identifier: AGPL-3.0-only
 /**
  * NSFW 模型切换器 - 检测模块
  * 负责调用外部 API 检测文本内容是否为 NSFW
  */
-import { addLog, addApiRequestLog, addApiResponseLog, addApiErrorLog, addDebugLog } from './logger.js';
+import { addLog, addDebugLog } from './logger.js';
 import { loadSettings } from './settings.js';
 import { getContext } from '../../../../extensions.js';
-function normalizeApiUrl(url) {
+export function normalizeApiUrl(url) {
     if (!url)
         return url;
     url = url.replace(/\/+$/, '');
@@ -66,7 +50,7 @@ export async function detectNSFW(content, externalSignal) {
         if (safeHeaders['Authorization']) {
             safeHeaders['Authorization'] = 'Bearer ***';
         }
-        addApiRequestLog(apiUrl, 'POST', safeHeaders, requestBody);
+        addLog(`API请求: POST ${apiUrl}`, 'info', 'debug');
         // M2 修复: externalSignal 可能在到达此处时**已经** aborted (例如上一次
         // 检测 abort 后立即触发新检测, 但新 signal 已被 swipe 取消)。
         // addEventListener('abort') 在已 aborted 的 signal 上**不会**触发回调,
@@ -105,17 +89,14 @@ export async function detectNSFW(content, externalSignal) {
                 catch (e) { /* 保持文本格式 */ }
             }
             catch (e) { /* 忽略读取错误 */ }
-            addApiErrorLog(apiUrl, {
-                name: 'HttpError',
-                message: 'HTTP ' + response.status,
-            }, duration);
-            addApiResponseLog(apiUrl, response.status, {}, errorBody, duration);
+            addLog(`API错误: HTTP ${response.status} (${duration}ms)`, 'error', 'error');
+            addLog(`API响应: ${response.status} ${apiUrl} (${duration}ms)`, 'error', 'debug');
             throw new Error('API 请求失败: ' + response.status);
         }
         const data = await response.json();
         const result = data.choices?.[0]?.message?.content?.trim();
         // 记录响应日志
-        addApiResponseLog(apiUrl, 200, {}, data, duration);
+        addLog(`API响应: 200 ${apiUrl} (${duration}ms)`, 'info', 'debug');
         addDebugLog('检测结果: ' + result);
         if (result === '1' || result === 'true' || result === '是' || result === 'yes')
             return true;
@@ -136,10 +117,7 @@ export async function detectNSFW(content, externalSignal) {
         else if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
             errorMessage = '网络连接失败';
         }
-        addApiErrorLog(apiUrl, {
-            name: err.name,
-            message: errorMessage,
-        }, duration);
+        addLog(`API错误: ${apiUrl} - ${errorMessage}`, 'error');
         return null;
     }
 }

@@ -1,20 +1,4 @@
-/**
- * NSFW 模型切换器 (SillyTavern Auto Model Switcher)
- * Copyright (C) 2025 ICU-bit
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
- */
+// SPDX-License-Identifier: AGPL-3.0-only
 
 /**
  * NSFW 模型切换器 - 设置模块
@@ -24,7 +8,6 @@
 import { extension_settings } from '../../../../extensions.js';
 import { saveSettingsDebounced } from '../../../../../script.js';
 import { addLog, addDebugLog } from './logger.js';
-import { shareOrDownload } from './mobile.js';
 
 export const EXTENSION_NAME = 'nsfw-model-switcher';
 
@@ -96,6 +79,16 @@ export const DEFAULT_SETTINGS: NsfwSwitcherSettings = {
 /** 内部 helper: 类型转换访问 extension_settings */
 function getExtSettings(): ExtSettingsRoot {
     return extension_settings as unknown as ExtSettingsRoot;
+}
+
+/**
+ * 类型化访问 extension_settings[EXTENSION_NAME]
+ *
+ * ST 的 extension_settings 类型是 unknown index, 需要断言到具体形状。
+ * 收口在这里, 调用方不再散写 `extension_settings as unknown as ...`。
+ */
+export function getSettingsRoot(): NsfwSwitcherSettings {
+    return getExtSettings()[EXTENSION_NAME];
 }
 
 /**
@@ -265,6 +258,22 @@ export function exportPreset(name: string): void {
         modules: presets[name].modules,
     };
     const filename = 'nsfw-preset-' + name.replace(/[^a-zA-Z0-9\u4e00-\u9fff]/g, '_') + '.json';
-    void shareOrDownload(JSON.stringify(exportData, null, 2), filename, 'application/json');
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
     addLog('已导出预设: ' + name, 'success');
 }
+
+/**
+ * 从预设中提取生成参数 (temperature/top_p 等)
+ *
+ * 返回值用于:
+ * - coordinator.prepare 时填入 AppliedOverrides.genParams
+ * - direct-api 的 setPresetOverrides 写入请求 body
+ */

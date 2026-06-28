@@ -2,18 +2,18 @@ console.log('NSFW_MODULE_LOADED');
 
 import { eventSource, event_types, saveSettingsDebounced } from '../../../../../script.js';
 import { extension_settings } from '../../../../extensions.js';
-import { addLog, addDebugLog, clearLogs, setRenderCallback, renderLogsHtml, renderLogEntryHtml, getLogs, copyLogsToClipboard, exportLogsAsJson, initLogs, type LogEntry, type LogLevelName } from './logger.js';
+import { addLog, addDebugLog, clearLogs, setRenderCallback, renderLogsHtml, renderLogEntryHtml, getLogs, initLogs, type LogEntry, type LogLevelName } from './logger.js';
 import { EXTENSION_NAME, DEFAULT_SETTINGS, loadSettings, collectAndSaveFromDom, applySettingsToDom, updateStatusIndicator, getAllPresetNames, getActivePreset, getActivePresetName, savePresetAs, deletePreset, renamePreset, exportPreset, type NsfwSwitcherSettings, type PresetData, type PresetModuleEnabledMap } from './settings.js';
 import { createStateMachine, type ModelStateMachine } from './state.js';
 import { createCoordinator, type SwitcherCoordinator } from './coordinator.js';
 import { detectNSFW, getLastAiMessageText, getMessageTextById, testNsfwApi } from './detector.js';
-import { restoreOriginalModel, clearSettingsSnapshot } from './model-switcher.js';
 import { initFetchInterceptor, setInterceptEnabled, isInterceptEnabled, setOnRequestRedirected, setPresetOverrides } from './direct-api.js';
 import { initProxies, activateOverrides, deactivateOverrides } from './preset-proxy.js';
-import { isMobile, showPrompt, showConfirm, shareOrDownload, initAccordion, prefersReducedMotion } from './mobile.js';
+// Inlined from mobile.ts: prefers-reduced-motion 检测
+const prefersReducedMotion = (): boolean => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 // Phase 4 Batch C: utility 模块
-import { escapeHtml, extractGenParams, getSettingsRoot } from './utils.js';
-import { renderPresetModulesHtml, buildDefaultEnabledModules } from './preset-modules.js';
+import { escapeHtml } from './logger.js';
+import { getSettingsRoot } from './settings.js';
 import { registerEventHandlers, callOnSettingsLoadedNow, type EventHandlerDeps } from './event-handlers.js';
 
 console.log('ALL_IMPORTS_OK');
@@ -161,10 +161,6 @@ function buildLogsSectionHtml() {
         '</select>' +
         '<button id="nsfw_switcher_clear_logs_btn" class="nsfw-log-btn">' +
         '<i class="fa-solid fa-trash"></i> 清空</button>' +
-        '<button id="nsfw_switcher_copy_logs_btn" class="nsfw-log-btn">' +
-        '<i class="fa-solid fa-copy"></i> 复制</button>' +
-        '<button id="nsfw_switcher_export_logs_btn" class="nsfw-log-btn">' +
-        '<i class="fa-solid fa-download"></i> 导出</button>' +
         '</div>' +
         '<i class="fa-solid fa-chevron-down nsfw-collapse-icon"></i>' +
         '</div></div>' +
@@ -266,23 +262,12 @@ function bindSettingsListeners($panel: JQuery<HTMLElement>): void {
         // 若 state 已是 IDLE (协调器未激活), 也 fallback 调 disable('manual') 保证幂等
         state.onManualRestore();
         coordinator.disable('manual');  // 幂等, 兜底关闭
-        await restoreOriginalModel();
-        clearSettingsSnapshot();
         addLog('手动恢复: 将使用原始模型生成', 'success');
         updateIndicator();
     });
     $panel.on('click', '#nsfw_switcher_clear_logs_btn', function () {
         clearLogs();
         addLog('日志已清空', 'info');
-    });
-    $panel.on('click', '#nsfw_switcher_copy_logs_btn', async function () {
-        await copyLogsToClipboard('text');
-    });
-    $panel.on('click', '#nsfw_switcher_export_logs_btn', async function () {
-        var jsonStr = exportLogsAsJson();
-        var filename = 'nsfw-switcher-logs-' + new Date().toISOString().replace(/[:.]/g, '-') + '.json';
-        await shareOrDownload(jsonStr, filename, 'application/json');
-        addLog('日志已导出为JSON文件', 'success');
     });
 
     // --- Preset Management ---
@@ -299,9 +284,6 @@ function bindSettingsListeners($panel: JQuery<HTMLElement>): void {
         const active = getActivePreset();
         if (active) {
             $panel.find('#nsfw_switcher_preset_status').html(renderPresetModulesHtml(active.data, active.modules));
-            if (isMobile()) {
-                initAccordion('.nsfw-preset-modules');
-            }
         } else {
             $panel.find('#nsfw_switcher_preset_status').text('未导入预设');
         }
@@ -388,7 +370,7 @@ function bindSettingsListeners($panel: JQuery<HTMLElement>): void {
     $panel.on('click', '#nsfw_preset_delete_btn', async function () {
         var name = getActivePresetName();
         if (!name) { if (typeof toastr !== 'undefined') toastr.warning('请先选择一个预设'); return; }
-        if (!await showConfirm('确定删除预设 "' + name + '"？')) return;
+        if (!confirm('确定删除预设 "' + name + '"？')) return;
         deletePreset(name);
         refreshPresetDropdown($panel);
         if (typeof toastr !== 'undefined') toastr.info('[NSFW 模型切换器] 已删除预设: ' + name);
@@ -408,7 +390,7 @@ function bindSettingsListeners($panel: JQuery<HTMLElement>): void {
     $panel.on('click', '#nsfw_preset_rename_btn', async function () {
         const oldName = getActivePresetName();
         if (!oldName) { if (typeof toastr !== 'undefined') toastr.warning('请先选择一个预设'); return; }
-        const newName = await showPrompt('输入新名称:', oldName);
+        const newName = prompt('输入新名称:', oldName);
         if (!newName || newName === oldName) return;
         if (getSettingsRoot().nsfwPresets[newName]) {
             if (typeof toastr !== 'undefined') toastr.error('预设名称 "' + newName + '" 已存在');
@@ -420,7 +402,7 @@ function bindSettingsListeners($panel: JQuery<HTMLElement>): void {
     });
 
     $panel.on('click', '#nsfw_preset_new_btn', async function () {
-        const name = await showPrompt('输入预设名称:');
+        const name = prompt('输入预设名称:');
         if (!name) return;
         if (getSettingsRoot().nsfwPresets[name]) {
             if (typeof toastr !== 'undefined') toastr.error('预设名称 "' + name + '" 已存在');
@@ -436,7 +418,7 @@ function bindSettingsListeners($panel: JQuery<HTMLElement>): void {
 
     refreshPresetDropdown($panel);
 
-    if (prefersReducedMotion()) {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
         $panel.addClass('nsfw-reduced-motion');
     }
 
@@ -544,9 +526,6 @@ function bindSettingsListeners($panel: JQuery<HTMLElement>): void {
     const initialSettings = loadSettings();
     if (initialSettings.nsfwPresetData) {
         $panel.find('#nsfw_switcher_preset_status').html(renderPresetModulesHtml(initialSettings.nsfwPresetData, initialSettings.nsfwPresetModules));
-        if (isMobile()) {
-            initAccordion('.nsfw-preset-modules');
-        }
     }
 
     updateIndicator();
@@ -633,3 +612,146 @@ window.__nsfwDebug = function (): void {
     });
     console.log('==========================================');
 };
+
+// =============================================================================
+// Inlined from preset-modules.ts (Phase 4 Batch C Step C2)
+// =============================================================================
+
+// SPDX-License-Identifier: AGPL-3.0-only
+
+/**
+ * NSFW 模型切换器 - 预设模块定义 + 渲染
+ *
+ * Phase 4 Batch C Step C2: 从 index.ts 抽出
+ *
+ * 包含:
+ * - PresetModuleDef 类型 + PRESET_MODULES 元数据 (6 个模块: genParams /
+ *   instruct / context / sysprompt / reasoning / prompts)
+ * - renderPresetModulesHtml: 生成预设模块树 HTML
+ * - buildDefaultEnabledModules: 为新导入的预设生成默认全开的模块字典
+ */
+
+/** 预设模块定义 */
+export interface PresetModuleDef {
+    id: string;
+    name: string;
+    fields: string[];
+    test: (p: PresetData) => boolean;
+}
+
+/**
+ * 6 个预设模块的元数据 (从原 index.ts L40-48 整体迁出)
+ */
+export const PRESET_MODULES: PresetModuleDef[] = [
+    {
+        id: 'genParams',
+        name: '生成参数',
+        fields: ['temperature', 'top_p', 'top_k', 'top_a', 'min_p', 'repetition_penalty', 'frequency_penalty', 'presence_penalty', 'openai_max_context', 'openai_max_tokens'],
+        test: (p: PresetData) => ['temperature', 'top_p', 'top_k', 'repetition_penalty'].some((k) => p[k] !== undefined),
+    },
+    {
+        id: 'instruct',
+        name: 'Instruct 模板',
+        fields: ['input_sequence', 'output_sequence', 'system_sequence', 'stop_sequence', 'wrap', 'names_behavior', 'activation_regex', 'output_suffix', 'input_suffix', 'system_suffix', 'first_output_sequence', 'last_output_sequence', 'system_same_as_user', 'sequences_as_stop_strings', 'skip_examples', 'macro', 'user_alignment_message', 'last_system_sequence', 'first_input_sequence', 'last_input_sequence', 'story_string_prefix', 'story_string_suffix'],
+        test: (p: PresetData) => p.input_sequence !== undefined,
+    },
+    {
+        id: 'context',
+        name: 'Context 模板',
+        fields: ['story_string', 'chat_start', 'example_separator', 'use_stop_strings', 'names_as_stop_strings', 'story_string_position', 'story_string_depth', 'story_string_role', 'always_force_name2', 'trim_sentences', 'single_line'],
+        test: (p: PresetData) => p.story_string !== undefined,
+    },
+    {
+        id: 'sysprompt',
+        name: 'System Prompt',
+        fields: ['content', 'post_history'],
+        test: (p: PresetData) => p.content !== undefined && p.name !== undefined,
+    },
+    {
+        id: 'reasoning',
+        name: 'Reasoning 格式',
+        fields: ['prefix', 'suffix', 'separator'],
+        test: (p: PresetData) => p.prefix !== undefined && p.suffix !== undefined,
+    },
+    {
+        id: 'prompts',
+        name: '自定义提示词',
+        fields: [],
+        test: (p: PresetData) => Array.isArray(p.prompts) && p.prompts.length > 0,
+    },
+];
+
+/**
+ * 生成预设模块树的 HTML
+ *
+ * @param preset    预设数据 (null 时显示"未导入预设")
+ * @param enabled   模块开关字典 (未提供时全开)
+ */
+export function renderPresetModulesHtml(
+    preset: PresetData | null | undefined,
+    enabled?: PresetModuleEnabledMap,
+): string {
+    if (!preset) return '<div class="nsfw-preset-status">未导入预设</div>';
+    const name = preset.name || preset.display_name || '未命名预设';
+    let html = '<div class="nsfw-preset-status">已导入: <span class="preset-name">' + name + '</span></div>';
+    html += '<div class="nsfw-preset-modules">';
+    for (const m of PRESET_MODULES) {
+        if (!m.test(preset)) continue;
+        const modOn = !enabled || enabled[m.id] !== false;
+        html += '<div class="nsfw-module-header" data-module="' + m.id + '">' +
+            '<input type="checkbox" class="nsfw-module-chk" data-module="' + m.id + '" ' + (modOn ? 'checked' : '') + '>' +
+            m.name + '</div>';
+
+        if (m.id === 'prompts' && Array.isArray(preset.prompts)) {
+            const prompts = preset.prompts as Array<{ name?: string; content?: string }>;
+            for (let pi = 0; pi < prompts.length; pi++) {
+                const pp = prompts[pi];
+                const pfId = 'prompt_' + pi;
+                const pfOn = enabled && enabled[pfId] !== false;
+                html += '<div class="nsfw-field-row" data-field="' + pfId + '">' +
+                    '<input type="checkbox" class="nsfw-field-chk" data-field="' + pfId + '" ' + (pfOn ? 'checked' : '') + '>' +
+                    '<span class="nsfw-field-value">' + escapeHtml(pp.name || '(未命名)') + '</span></div>';
+            }
+        } else if (m.fields) {
+            for (const fk of m.fields) {
+                if (preset[fk] !== undefined) {
+                    const fId = m.id + '_' + fk;
+                    const fOn = enabled && enabled[fId] !== false;
+                    let val = String(preset[fk]);
+                    if (val.length > 80) val = val.substring(0, 80) + '...';
+                    html += '<div class="nsfw-field-row" data-field="' + fId + '" data-key="' + fk + '">' +
+                        '<input type="checkbox" class="nsfw-field-chk" data-field="' + fId + '" ' + (fOn ? 'checked' : '') + '>' +
+                        '<span class="nsfw-field-key">' + fk + ':</span>' +
+                        '<span class="nsfw-field-value">' + escapeHtml(val) + '</span></div>';
+                }
+            }
+        }
+    }
+    html += '</div>';
+    return html;
+}
+
+/**
+ * 为新导入的预设生成默认全开的模块字典
+ *
+ * 用于:
+ * - 文件导入时 (用户首次拖入 JSON, 自动启用所有可识别的模块)
+ * - "新建" 按钮 (基于当前激活预设复制)
+ */
+export function buildDefaultEnabledModules(preset: PresetData | null | undefined): PresetModuleEnabledMap {
+    const enabled: PresetModuleEnabledMap = {};
+    if (!preset) return enabled;
+    for (const m of PRESET_MODULES) {
+        if (!m.test(preset)) continue;
+        enabled[m.id] = true;
+        if (m.id === 'prompts' && Array.isArray(preset.prompts)) {
+            const prompts = preset.prompts as unknown[];
+            for (let pi = 0; pi < prompts.length; pi++) enabled['prompt_' + pi] = true;
+        } else if (m.fields) {
+            for (const f of m.fields) {
+                if (preset[f] !== undefined) enabled[m.id + '_' + f] = true;
+            }
+        }
+    }
+    return enabled;
+}
