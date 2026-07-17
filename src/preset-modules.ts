@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * NSFW 模型切换器 - 预设模块定义 + 渲染
  *
@@ -8,66 +9,80 @@
  * - renderPresetModulesHtml: 生成预设模块树 HTML
  * - buildDefaultEnabledModules: 为新导入的预设生成默认全开的模块字典
  */
+
 import { escapeHtml } from './logger.js';
+import type { PresetData, PresetModuleEnabledMap } from './settings.js';
+
+/** 预设模块定义 */
+export interface PresetModuleDef {
+    id: string;
+    name: string;
+    fields: string[];
+    test: (p: PresetData) => boolean;
+}
+
 /**
  * 6 个预设模块的元数据
  */
-export const PRESET_MODULES = [
+export const PRESET_MODULES: PresetModuleDef[] = [
     {
         id: 'genParams',
         name: '生成参数',
         fields: ['temperature', 'top_p', 'top_k', 'top_a', 'min_p', 'repetition_penalty', 'frequency_penalty', 'presence_penalty', 'openai_max_context', 'openai_max_tokens'],
-        test: (p) => ['temperature', 'top_p', 'top_k', 'repetition_penalty'].some((k) => p[k] !== undefined),
+        test: (p: PresetData) => ['temperature', 'top_p', 'top_k', 'repetition_penalty'].some((k) => p[k] !== undefined),
     },
     {
         id: 'instruct',
         name: 'Instruct 模板',
         fields: ['input_sequence', 'output_sequence', 'system_sequence', 'stop_sequence', 'wrap', 'names_behavior', 'activation_regex', 'output_suffix', 'input_suffix', 'system_suffix', 'first_output_sequence', 'last_output_sequence', 'system_same_as_user', 'sequences_as_stop_strings', 'skip_examples', 'macro', 'user_alignment_message', 'last_system_sequence', 'first_input_sequence', 'last_input_sequence', 'story_string_prefix', 'story_string_suffix'],
-        test: (p) => p.input_sequence !== undefined,
+        test: (p: PresetData) => p.input_sequence !== undefined,
     },
     {
         id: 'context',
         name: 'Context 模板',
         fields: ['story_string', 'chat_start', 'example_separator', 'use_stop_strings', 'names_as_stop_strings', 'story_string_position', 'story_string_depth', 'story_string_role', 'always_force_name2', 'trim_sentences', 'single_line'],
-        test: (p) => p.story_string !== undefined,
+        test: (p: PresetData) => p.story_string !== undefined,
     },
     {
         id: 'sysprompt',
         name: 'System Prompt',
         fields: ['content', 'post_history'],
-        test: (p) => p.content !== undefined && p.name !== undefined,
+        test: (p: PresetData) => p.content !== undefined && p.name !== undefined,
     },
     {
         id: 'reasoning',
         name: 'Reasoning 格式',
         fields: ['prefix', 'suffix', 'separator'],
-        test: (p) => p.prefix !== undefined && p.suffix !== undefined,
+        test: (p: PresetData) => p.prefix !== undefined && p.suffix !== undefined,
     },
     {
         id: 'prompts',
         name: '自定义提示词',
         fields: [],
-        test: (p) => Array.isArray(p.prompts) && p.prompts.length > 0,
+        test: (p: PresetData) => Array.isArray(p.prompts) && p.prompts.length > 0,
     },
 ];
+
 /**
  * 生成预设模块树的 HTML
  */
-export function renderPresetModulesHtml(preset, enabled) {
-    if (!preset)
-        return '<div class="nsfw-preset-status">未导入预设</div>';
+export function renderPresetModulesHtml(
+    preset: PresetData | null | undefined,
+    enabled?: PresetModuleEnabledMap,
+): string {
+    if (!preset) return '<div class="nsfw-preset-status">未导入预设</div>';
     const name = escapeHtml(String(preset.name || preset.display_name || '未命名预设'));
     let html = '<div class="nsfw-preset-status">已导入: <span class="preset-name">' + name + '</span></div>';
     html += '<div class="nsfw-preset-modules">';
     for (const m of PRESET_MODULES) {
-        if (!m.test(preset))
-            continue;
+        if (!m.test(preset)) continue;
         const modOn = !enabled || enabled[m.id] !== false;
         html += '<div class="nsfw-module-header" data-module="' + m.id + '">' +
             '<input type="checkbox" class="nsfw-module-chk" data-module="' + m.id + '" ' + (modOn ? 'checked' : '') + '>' +
             m.name + '</div>';
+
         if (m.id === 'prompts' && Array.isArray(preset.prompts)) {
-            const prompts = preset.prompts;
+            const prompts = preset.prompts as Array<{ name?: string; content?: string }>;
             for (let pi = 0; pi < prompts.length; pi++) {
                 const pp = prompts[pi];
                 const pfId = 'prompt_' + pi;
@@ -76,15 +91,13 @@ export function renderPresetModulesHtml(preset, enabled) {
                     '<input type="checkbox" class="nsfw-field-chk" data-field="' + pfId + '" ' + (pfOn ? 'checked' : '') + '>' +
                     '<span class="nsfw-field-value">' + escapeHtml(pp.name || '(未命名)') + '</span></div>';
             }
-        }
-        else if (m.fields) {
+        } else if (m.fields) {
             for (const fk of m.fields) {
                 if (preset[fk] !== undefined) {
                     const fId = m.id + '_' + fk;
                     const fOn = enabled && enabled[fId] !== false;
                     let val = String(preset[fk]);
-                    if (val.length > 80)
-                        val = val.substring(0, 80) + '...';
+                    if (val.length > 80) val = val.substring(0, 80) + '...';
                     html += '<div class="nsfw-field-row" data-field="' + fId + '" data-key="' + fk + '">' +
                         '<input type="checkbox" class="nsfw-field-chk" data-field="' + fId + '" ' + (fOn ? 'checked' : '') + '>' +
                         '<span class="nsfw-field-key">' + fk + ':</span>' +
@@ -96,29 +109,24 @@ export function renderPresetModulesHtml(preset, enabled) {
     html += '</div>';
     return html;
 }
+
 /**
  * 为新导入的预设生成默认全开的模块字典
  */
-export function buildDefaultEnabledModules(preset) {
-    const enabled = {};
-    if (!preset)
-        return enabled;
+export function buildDefaultEnabledModules(preset: PresetData | null | undefined): PresetModuleEnabledMap {
+    const enabled: PresetModuleEnabledMap = {};
+    if (!preset) return enabled;
     for (const m of PRESET_MODULES) {
-        if (!m.test(preset))
-            continue;
+        if (!m.test(preset)) continue;
         enabled[m.id] = true;
         if (m.id === 'prompts' && Array.isArray(preset.prompts)) {
-            const prompts = preset.prompts;
-            for (let pi = 0; pi < prompts.length; pi++)
-                enabled['prompt_' + pi] = true;
-        }
-        else if (m.fields) {
+            const prompts = preset.prompts as unknown[];
+            for (let pi = 0; pi < prompts.length; pi++) enabled['prompt_' + pi] = true;
+        } else if (m.fields) {
             for (const f of m.fields) {
-                if (preset[f] !== undefined)
-                    enabled[m.id + '_' + f] = true;
+                if (preset[f] !== undefined) enabled[m.id + '_' + f] = true;
             }
         }
     }
     return enabled;
 }
-//# sourceMappingURL=preset-modules.js.map

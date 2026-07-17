@@ -131,15 +131,15 @@ sillytavern-auto-model-switcher/
 ├── manifest.json               ← ST 扩展声明文件 (js: "dist/index.js")
 │
 ├── src/                        ← TypeScript 源码（开发者编辑）
-│   ├── index.ts                ← 入口控制器（插件加载起点，~770 行）
+│   ├── index.ts                ← 入口控制器（插件加载起点，~757 行）
+│   ├── coordinator.ts          ← 状态协调器（统一三层副作用）
+│   ├── event-handlers.ts       ← ST 事件处理器（DI 注入）
 │   ├── direct-api.ts           ← 【Plan B 核心】fetch 拦截器
 │   ├── preset-proxy.ts         ← 【偷天换日】ES6 Proxy 包装 power_user
-│   ├── model-switcher.ts       ← 模型切换器（oai_settings 快照管理，残余 Plan A）
 │   ├── detector.ts             ← NSFW 检测器（API 调用）
-│   ├── state.ts                ← 状态机（4 状态有限状态机）
+│   ├── state.ts                ← 状态机（4 状态 FSM + onTransition hook）
 │   ├── settings.ts             ← 设置管理器（多预设 CRUD + DOM 绑定）
-│   ├── logger.ts               ← 日志模块（4 级日志 + localStorage + 渲染回调）
-│   └── mobile.ts               ← 模态框 + 平台工具集（命名遗留）
+│   └── logger.ts               ← 日志模块（4 级日志 + 渲染回调）
 │
 ├── types/                      ← TypeScript 全局类型声明
 │   └── sillytavern.d.ts        ← ST API 类型（oai_settings, power_user, eventSource 等）
@@ -164,28 +164,28 @@ sillytavern-auto-model-switcher/
 
 | 组件 | 源文件 | 类型 | 行数 | 核心功能 |
 |---|---|---|---|---|
-| 入口控制器 | `src/index.ts` | 入口/编排 | ~770 | 初始化插件、HTML 模板、事件绑定、子模块编排 |
-| fetch 拦截器 | `src/direct-api.ts` | 核心业务 | ~330 | Plan B：拦截 ST API 请求重定向到目标模型 |
-| 预设代理 | `src/preset-proxy.ts` | 核心业务 | ~380 | ES6 Proxy 包装 power_user，激活时返回 NSFW 预设 |
-| 模型切换器 | `src/model-switcher.ts` | 核心业务（Plan A 残余） | ~375 | oai_settings 快照管理、手动恢复使用 |
-| NSFW 检测器 | `src/detector.ts` | 核心业务 | ~235 | 调用外部 API 对文本进行 NSFW 分类 |
-| 状态机 | `src/state.ts` | 核心业务 | ~215 | 4 状态 FSM 管理切换生命周期 |
-| 设置管理器 | `src/settings.ts` | 工具层 | ~270 | 扩展设置存取、多预设 CRUD、DOM 双向绑定 |
-| 日志模块 | `src/logger.ts` | 工具层 | ~395 | 4 级日志收集、localStorage 持久化、UI 渲染 |
-| 平台工具集 | `src/mobile.ts` | 工具层 | ~355 | 自定义模态框、移动端检测、分享/下载 |
+| 入口控制器 | `src/index.ts` | 入口/编排 | ~757 | 初始化插件、HTML 模板加载、子模块编排 |
+| 状态协调器 | `src/coordinator.ts` | 核心业务 | ~295 | 统一持有 fetch + Proxy + presetOverrides 三层副作用 |
+| 事件处理器 | `src/event-handlers.ts` | 核心业务 | ~220 | ST 事件注册/取消注册（DI 化） |
+| fetch 拦截器 | `src/direct-api.ts` | 核心业务 | ~345 | Plan B：拦截 ST API 请求重定向到目标模型 |
+| 预设代理 | `src/preset-proxy.ts` | 核心业务 | ~440 | ES6 Proxy 包装 power_user，激活时返回 NSFW 预设 |
+| NSFW 检测器 | `src/detector.ts` | 核心业务 | ~225 | 调用外部 API 对文本进行 NSFW 分类 |
+| 状态机 | `src/state.ts` | 核心业务 | ~250 | 4 状态 FSM + onTransition hook 管理切换生命周期 |
+| 设置管理器 | `src/settings.ts` | 工具层 | ~280 | 扩展设置存取、多预设 CRUD、DOM 双向绑定 |
+| 日志模块 | `src/logger.ts` | 工具层 | ~90 | 4 级日志收集、UI 渲染回调 |
 
 ### 2.3 文件依赖关系
 
 ```
 src/index.ts                    ← 入口，依赖所有子模块
 ├── src/logger.ts               ← 无业务依赖（纯工具）
-├── src/mobile.ts               ← 依赖 SillyTavern: extensions.js（getContext）
-├── src/settings.ts             ← 依赖 logger, mobile, SillyTavern: extensions.js（extension_settings）+ script.js（saveSettingsDebounced）
-├── src/state.ts                ← 依赖 logger（addStateTransitionLog）
+├── src/settings.ts             ← 依赖 logger, SillyTavern: extensions.js（extension_settings）+ script.js（saveSettingsDebounced）
+├── src/state.ts                ← 依赖 logger
+├── src/coordinator.ts          ← 依赖 state, direct-api, preset-proxy, logger
+├── src/event-handlers.ts       ← 依赖 logger, settings, detector, direct-api, state, coordinator
 ├── src/detector.ts             ← 依赖 logger, settings, SillyTavern: extensions.js（getContext）
-├── src/model-switcher.ts       ← 依赖 logger, settings, SillyTavern: script.js, openai.js（oai_settings）, power-user.js（power_user）
 ├── src/preset-proxy.ts         ← 依赖 logger, SillyTavern: power-user.js（power_user）
-└── src/direct-api.ts           ← 依赖 logger, settings
+└── src/direct-api.ts           ← 依赖 logger, settings, detector（normalizeApiUrl）
 ```
 
 ### 2.4 数据流全景

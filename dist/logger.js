@@ -1,4 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+/** 日志条数上限（外部通过 setLogMaxEntries 注入，避免循环依赖 settings.ts） */
+let _logMaxEntries = 200;
+export function setLogMaxEntries(n) {
+    _logMaxEntries = n;
+}
 let logs = [];
 let renderCallback = null;
 const LOG_LEVEL_PRIORITY = {
@@ -23,8 +28,8 @@ export function addLog(message, type = 'info', level, data) {
     });
     const logEntry = { timestamp, message, type, level, data: data ?? null };
     logs.unshift(logEntry);
-    if (logs.length > 200)
-        logs = logs.slice(0, 200);
+    if (logs.length > _logMaxEntries)
+        logs = logs.slice(0, _logMaxEntries);
     const consoleMsg = `[NSFW模型切换器][${level.toUpperCase()}] ${message}`;
     switch (level) {
         case 'debug':

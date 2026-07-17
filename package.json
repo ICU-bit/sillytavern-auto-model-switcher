@@ -8,7 +8,8 @@
         "build": "tsc",
         "dev": "tsc --watch",
         "check": "tsc --noEmit",
-        "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
+        "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+        "test": "tsc --noEmit"
     },
     "devDependencies": {
         "@types/jquery": "^3.5.34",

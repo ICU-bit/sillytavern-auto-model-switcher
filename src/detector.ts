@@ -136,11 +136,14 @@ export async function detectNSFW(
         const duration = Date.now() - startTime;
         const err = error instanceof Error ? error : new Error(String(error));
 
-        // 分类错误类型
-        let errorMessage = err.message;
+        // AbortError 是正常行为（swipe 取消等），降级为 debug 避免日志轰炸
         if (err.name === 'AbortError') {
-            errorMessage = '检测请求超时或取消';
-        } else if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
+            addDebugLog('检测请求被取消 (swipe/超时)');
+            return null;
+        }
+
+        let errorMessage = err.message;
+        if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
             errorMessage = '网络连接失败';
         }
 

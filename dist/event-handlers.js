@@ -15,10 +15,9 @@
  */
 import { eventSource, event_types } from '../../../../../script.js';
 import { addLog, addDebugLog } from './logger.js';
-import { loadSettings, applySettingsToDom, updateStatusIndicator, getActivePreset } from './settings.js';
+import { loadSettings, applySettingsToDom, updateStatusIndicator, getActivePreset, getSettingsRoot } from './settings.js';
 import { detectNSFW, getLastAiMessageText, getMessageTextById } from './detector.js';
 import { isInterceptEnabled } from './direct-api.js';
-import { getSettingsRoot } from './settings.js';
 import { extractGenParams } from './preset-proxy.js';
 /**
  * 内部 detection 闭包状态 (swipe 取消用)

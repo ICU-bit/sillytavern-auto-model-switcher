@@ -6,6 +6,7 @@
 import { extension_settings } from '../../../../extensions.js';
 import { saveSettingsDebounced } from '../../../../../script.js';
 import { addLog, addDebugLog } from './logger.js';
+import { setLogMaxEntries } from './logger.js';
 export const EXTENSION_NAME = 'nsfw-model-switcher';
 /**
  * 默认设置
@@ -19,12 +20,16 @@ export const DEFAULT_SETTINGS = {
     modelAApiUrl: '',
     modelAApiKey: '',
     nsfwPresetData: null,
-    nsfwPresetModules: {}, // 显式默认空字典, 避免运行时 || {} 兜底
+    nsfwPresetModules: {},
     nsfwPresets: {},
     activePresetName: '',
     showNotification: true,
     debugMode: false,
     debugLevel: 'info',
+    logMaxEntries: 200,
+    apiTimeoutMs: 60000,
+    safetyTimeoutMs: 30000,
+    apiRetries: 1,
 };
 /** 内部 helper: 类型转换访问 extension_settings */
 function getExtSettings() {
@@ -55,28 +60,44 @@ export function loadSettings() {
     return merged;
 }
 /**
- * 从 DOM 表单收集设置值并保存
+ * 安全解析整数 — 显式检查 NaN，不会静默吞噬无效输入
+ */
+function safeParseInt(raw, fallback) {
+    if (!raw)
+        return fallback;
+    const n = parseInt(raw, 10);
+    return Number.isNaN(n) ? fallback : n;
+}
+/**
+ * 从 DOM 表单收集设置值并保存（增量更新模式）
+ *
+ * 安全设计：
+ * - 先深拷贝已有 settings（保留所有非 DOM 字段如 nsfwPresets）
+ * - 只覆盖 DOM 对应的白名单字段
+ * - 防止新增字段被意外丢失，也防止恶意 DOM 注入未知 key
  */
 export function collectAndSaveFromDom($formContainer) {
     const root = getExtSettings();
     const current = root[EXTENSION_NAME];
-    root[EXTENSION_NAME] = {
-        enabled: $formContainer.find('#nsfw_switcher_enabled').prop('checked'),
-        nsfwApiUrl: String($formContainer.find('#nsfw_switcher_api_url').val() ?? ''),
-        nsfwApiKey: String($formContainer.find('#nsfw_switcher_api_key').val() ?? ''),
-        nsfwModelName: String($formContainer.find('#nsfw_switcher_model_name').val() ?? ''),
-        modelA: String($formContainer.find('#nsfw_switcher_model_a').val() ?? ''),
-        modelAApiUrl: String($formContainer.find('#nsfw_switcher_model_a_api_url').val() ?? ''),
-        modelAApiKey: String($formContainer.find('#nsfw_switcher_model_a_api_key').val() ?? ''),
-        nsfwPresetData: current?.nsfwPresetData ?? null,
-        nsfwPresets: current?.nsfwPresets ?? {},
-        nsfwPresetModules: current?.nsfwPresetModules ?? {},
-        activePresetName: current?.activePresetName ?? '',
-        showNotification: $formContainer.find('#nsfw_switcher_show_notification').prop('checked'),
-        debugMode: $formContainer.find('#nsfw_switcher_debug_mode').prop('checked'),
-        debugLevel: String($formContainer.find('#nsfw_switcher_debug_level').val() || 'info'),
-    };
-    addDebugLog('设置已从DOM收集并保存');
+    // 增量更新：拷贝所有已有字段，只覆盖 DOM 来源的白名单字段
+    const merged = { ...DEFAULT_SETTINGS, ...(current || {}) };
+    // 仅覆盖以下 DOM 白名单字段
+    merged.enabled = Boolean($formContainer.find('#nsfw_switcher_enabled').prop('checked'));
+    merged.nsfwApiUrl = String($formContainer.find('#nsfw_switcher_api_url').val() ?? '');
+    merged.nsfwApiKey = String($formContainer.find('#nsfw_switcher_api_key').val() ?? '');
+    merged.nsfwModelName = String($formContainer.find('#nsfw_switcher_model_name').val() ?? '');
+    merged.modelA = String($formContainer.find('#nsfw_switcher_model_a').val() ?? '');
+    merged.modelAApiUrl = String($formContainer.find('#nsfw_switcher_model_a_api_url').val() ?? '');
+    merged.modelAApiKey = String($formContainer.find('#nsfw_switcher_model_a_api_key').val() ?? '');
+    merged.showNotification = Boolean($formContainer.find('#nsfw_switcher_show_notification').prop('checked'));
+    merged.debugMode = Boolean($formContainer.find('#nsfw_switcher_debug_mode').prop('checked'));
+    merged.debugLevel = String($formContainer.find('#nsfw_switcher_debug_level').val() || 'info');
+    merged.logMaxEntries = safeParseInt(String($formContainer.find('#nsfw_switcher_log_entries').val()), 200);
+    merged.apiTimeoutMs = safeParseInt(String($formContainer.find('#nsfw_switcher_api_timeout').val()), 60) * 1000;
+    merged.safetyTimeoutMs = safeParseInt(String($formContainer.find('#nsfw_switcher_safety_timeout').val()), 30) * 1000;
+    merged.apiRetries = safeParseInt(String($formContainer.find('#nsfw_switcher_api_retries').val()), 1);
+    setLogMaxEntries(merged.logMaxEntries);
+    root[EXTENSION_NAME] = merged;
     saveSettingsDebounced();
 }
 /**
@@ -94,6 +115,10 @@ export function applySettingsToDom(settings, $formContainer) {
     $formContainer.find('#nsfw_switcher_show_notification').prop('checked', settings.showNotification);
     $formContainer.find('#nsfw_switcher_debug_mode').prop('checked', settings.debugMode);
     $formContainer.find('#nsfw_switcher_debug_level').val(settings.debugLevel || 'info');
+    $formContainer.find('#nsfw_switcher_log_entries').val(settings.logMaxEntries || 200);
+    $formContainer.find('#nsfw_switcher_api_timeout').val((settings.apiTimeoutMs || 60000) / 1000);
+    $formContainer.find('#nsfw_switcher_safety_timeout').val((settings.safetyTimeoutMs || 30000) / 1000);
+    $formContainer.find('#nsfw_switcher_api_retries').val(settings.apiRetries ?? 1);
     addDebugLog('设置已应用到DOM');
 }
 /**
@@ -207,11 +232,4 @@ export function exportPreset(name) {
     URL.revokeObjectURL(url);
     addLog('已导出预设: ' + name, 'success');
 }
-/**
- * 从预设中提取生成参数 (temperature/top_p 等)
- *
- * 返回值用于:
- * - coordinator.prepare 时填入 AppliedOverrides.genParams
- * - direct-api 的 setPresetOverrides 写入请求 body
- */
 //# sourceMappingURL=settings.js.map

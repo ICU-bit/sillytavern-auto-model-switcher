@@ -105,6 +105,16 @@ export function initFetchInterceptor() {
     };
 }
 /**
+ * 恢复 window.fetch 到原始实现（插件卸载/热重载时调用）
+ */
+export function restoreFetchInterceptor() {
+    if (originalFetch) {
+        window.fetch = originalFetch;
+        originalFetch = null;
+        addLog('fetch 拦截器已恢复', 'info', 'debug');
+    }
+}
+/**
  * 启用/禁用拦截
  */
 export function setInterceptEnabled(enabled) {
@@ -124,7 +134,7 @@ function applyPresetToBody(directBody) {
     if (!presetOverrides)
         return;
     for (const [key, value] of Object.entries(presetOverrides)) {
-        if (value !== undefined) {
+        if (value != null) {
             directBody[key] = value;
         }
     }
@@ -219,80 +229,92 @@ async function redirectToTarget(originalBody, originalOptions) {
     if (onRequestRedirected) {
         onRequestRedirected();
     }
-    // 15秒超时，防止目标API过慢导致用户长时间等待
-    const timeoutController = new AbortController();
-    const timeoutId = setTimeout(function () {
-        timeoutController.abort();
-    }, 15000);
-    // 如果ST取消了请求，同步取消我们的请求
-    if (originalOptions && originalOptions.signal) {
-        originalOptions.signal.addEventListener('abort', function () {
-            timeoutController.abort();
-        }, { once: true });
-    }
-    const fetchOptions = {
-        method: 'POST',
-        headers: headers,
-        body: JSON.stringify(directBody),
-        signal: timeoutController.signal,
-    };
+    // 使用配置的超时时间 (默认 60 秒，适配 thinking 模型首 token 延迟)
+    const timeoutMs = settings.apiTimeoutMs || 60000;
+    const maxRetries = settings.apiRetries ?? 1;
+    let lastError = null;
+    let currentController = null;
+    // ST 取消联动 — 每次调用独立注册，try/finally 确保所有退出路径可清理
+    const stSignal = originalOptions?.signal;
+    const onStAbort = stSignal
+        ? function () { if (currentController)
+            currentController.abort(); }
+        : null;
     try {
-        const response = await originalFetch(targetUrl, fetchOptions);
-        clearTimeout(timeoutId);
-        const duration = Date.now() - startTime;
-        if (!response.ok) {
-            // 尝试读取响应体以获取错误详情
-            let errorBody = null;
+        if (stSignal && onStAbort) {
+            stSignal.addEventListener('abort', onStAbort, { once: true });
+        }
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+            currentController = new AbortController();
+            const timeoutId = setTimeout(function () {
+                currentController.abort();
+            }, timeoutMs);
+            const fetchOptions = {
+                method: 'POST',
+                headers: headers,
+                body: JSON.stringify(directBody),
+                signal: currentController.signal,
+            };
             try {
-                const clonedResponse = response.clone();
-                errorBody = await clonedResponse.text();
-                try {
-                    errorBody = JSON.parse(errorBody);
+                const response = await originalFetch(targetUrl, fetchOptions);
+                clearTimeout(timeoutId);
+                const duration = Date.now() - startTime;
+                if (!response.ok) {
+                    let errorBody = null;
+                    try {
+                        const clonedResponse = response.clone();
+                        errorBody = await clonedResponse.text();
+                        try {
+                            errorBody = JSON.parse(errorBody);
+                        }
+                        catch (e) { /* 保持文本格式 */ }
+                    }
+                    catch (e) { /* 忽略读取错误 */ }
+                    addLog(`API错误: HTTP ${response.status} (${duration}ms)`, 'error', 'error');
+                    addLog(`API响应: ${response.status} ${targetUrl} (${duration}ms)`, 'error', 'debug');
+                    return null; // HTTP 错误不重试
                 }
-                catch (e) { /* 保持文本格式 */ }
+                addLog(`API响应: 200 ${targetUrl} (${duration}ms)`, 'info', 'debug');
+                addLog('直接API调用成功: ' + targetModel, 'success');
+                return response;
             }
-            catch (e) { /* 忽略读取错误 */ }
-            addLog(`API错误: HTTP ${response.status} (${duration}ms)`, 'error', 'error');
-            addLog(`API响应: ${response.status} ${targetUrl} (${duration}ms)`, 'error', 'debug');
-            return null;
-        }
-        // 读取响应体
-        let responseBody = null;
-        try {
-            const clonedResponse = response.clone();
-            responseBody = await clonedResponse.text();
-            try {
-                responseBody = JSON.parse(responseBody);
+            catch (e) {
+                clearTimeout(timeoutId);
+                const duration = Date.now() - startTime;
+                const err = e instanceof Error ? e : new Error(String(e));
+                let errorCode = 'UNKNOWN';
+                let isRetryable = false;
+                if (err.name === 'AbortError') {
+                    errorCode = 'TIMEOUT';
+                    isRetryable = true;
+                }
+                else if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
+                    errorCode = 'NETWORK';
+                    isRetryable = true;
+                }
+                else if (err.message.includes('CORS')) {
+                    errorCode = 'CORS';
+                }
+                lastError = err;
+                if (isRetryable && attempt < maxRetries) {
+                    addLog(`直接API调用失败 [${errorCode}]，重试 ${attempt + 1}/${maxRetries} (${duration}ms)`, 'warning');
+                    continue;
+                }
+                addLog(`直接API调用失败 [${errorCode}]: ${err.message} (模型: ${targetModel}, 耗时: ${duration}ms)`, 'error');
+                addLog(`API错误: ${targetUrl} - ${err.message}`, 'error');
+                return null;
             }
-            catch (e) { /* 保持文本格式 */ }
         }
-        catch (e) { /* 忽略读取错误 */ }
-        addLog(`API响应: 200 ${targetUrl} (${duration}ms)`, 'info', 'debug');
-        addLog('直接API调用成功: ' + targetModel, 'success');
-        return response;
-    }
-    catch (e) {
-        clearTimeout(timeoutId);
-        const duration = Date.now() - startTime;
-        const err = e instanceof Error ? e : new Error(String(e));
-        // 分类错误类型
-        let errorMessage = err.message;
-        let errorCode = 'UNKNOWN';
-        if (err.name === 'AbortError') {
-            errorMessage = '请求超时或被取消 (15秒)';
-            errorCode = 'TIMEOUT';
+        if (lastError) {
+            addLog(`直接API调用失败: 重试 ${maxRetries} 次后仍失败 (模型: ${targetModel})`, 'error');
         }
-        else if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
-            errorMessage = '网络连接失败，请检查目标API地址是否正确';
-            errorCode = 'NETWORK';
-        }
-        else if (err.message.includes('CORS')) {
-            errorMessage = '跨域请求被阻止，目标API可能不支持浏览器直接调用';
-            errorCode = 'CORS';
-        }
-        addLog('直接API调用失败 [' + errorCode + ']: ' + errorMessage + ' (模型: ' + targetModel + ', 耗时: ' + duration + 'ms)', 'error');
-        addLog(`API错误: ${targetUrl} - ${errorMessage}`, 'error');
         return null;
+    }
+    finally {
+        // 确保清理 ST signal 监听器（所有退出路径可达）
+        if (onStAbort && stSignal) {
+            stSignal.removeEventListener('abort', onStAbort);
+        }
     }
 }
 //# sourceMappingURL=direct-api.js.map

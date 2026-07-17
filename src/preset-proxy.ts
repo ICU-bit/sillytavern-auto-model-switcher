@@ -13,6 +13,7 @@
 
 import { power_user } from '../../../../../scripts/power-user.js';
 import { addLog, addDebugLog } from './logger.js';
+import { loadSettings } from './settings.js';
 
 // ===== 类型定义 =====
 
@@ -86,8 +87,17 @@ const CONTEXT_GLOBAL_KEYS: string[] = ['always_force_name2', 'trim_sentences', '
 //  穿透到原始对象, 会被 ST 序列化保存, 卸载插件后永久残留。)
 const NSFW_PROXY_MARKER: unique symbol = Symbol.for('nsfw-auto-model-switcher.proxy-installed');
 
-// 安全超时时间（毫秒）
-const SAFETY_TIMEOUT_MS = 30000;
+// 安全超时时间（默认 30000 毫秒，可通过 settings.safetyTimeoutMs 配置）
+const DEFAULT_SAFETY_TIMEOUT_MS = 30000;
+
+function getSafetyTimeoutMs(): number {
+    try {
+        const s = loadSettings();
+        return s.safetyTimeoutMs || DEFAULT_SAFETY_TIMEOUT_MS;
+    } catch (_e) {
+        return DEFAULT_SAFETY_TIMEOUT_MS;
+    }
+}
 
 /**
  * Safety timeout 触发时的外部回调 (Phase 4 Batch B Step 4)
@@ -395,7 +405,7 @@ function startSafetyTimer(): void {
     clearSafetyTimer();
     proxyState.safetyTimer = setTimeout(function () {
         if (proxyState.active) {
-            addLog('安全超时：预设覆盖超过 ' + (SAFETY_TIMEOUT_MS / 1000) + ' 秒未停用，自动恢复', 'warning');
+            addLog('安全超时：预设覆盖超过 ' + (getSafetyTimeoutMs() / 1000) + ' 秒未停用，自动恢复', 'warning');
             // Phase 4 Batch B Step 4: 优先通知 coordinator (会同时关 fetch + state)
             // 若未注册回调, 走旧行为 (只关 Proxy)
             if (onSafetyTimeout) {
@@ -411,7 +421,7 @@ function startSafetyTimer(): void {
                 deactivateOverrides();
             }
         }
-    }, SAFETY_TIMEOUT_MS);
+    }, getSafetyTimeoutMs());
 }
 
 /**
