@@ -1,6 +1,20 @@
 # 更新日志
 
-## v1.2.0 (2026-06-05)
+## v1.2.0 (refactor，等待实机测试)
+
+> 当前代码已推送到 `refactor`，尚未合并到默认 `master`。发布前需要完成 PC 与移动端实机验证。
+
+### 2026-07-17 后续优化
+
+- `src/index.ts` 进一步拆分为 `ui-builder.ts`、`ui-bindings.ts` 与 `preset-modules.ts`，入口缩减至约 118 行
+- 恢复并接入 `mobile.ts`：PC/移动端自定义模态框、移动端手风琴、原生分享、减少动画支持
+- 新增高级设置：直调 API 超时（默认 60 秒）、失败重试次数（默认 1 次）、Proxy 安全超时（默认 30 秒）
+- 超时与网络错误可自动重试；HTTP 错误不重试并回退原始请求
+- 修复预设名称转义、fetch signal listener 清理、设置增量保存和日志刷屏问题
+- 增加 `npm test` 类型检查脚本与 GitHub Actions CI
+- 清理已废弃的 `model-switcher`、`utils` 编译残留
+
+### 2026-06-05 初始重构
 
 ### 🔥 重大架构升级
 
@@ -16,10 +30,11 @@
 - 6 条原本散落的路径（switch / restore / manual / safety_timeout / plugin_off / fetch_fallback）收敛到协调器
 
 #### 模块化抽离 (Phase 4 Batch C)
-- 新增 `src/utils.ts` — `escapeHtml` / `extractGenParams` / `getSettingsRoot`
 - 新增 `src/preset-modules.ts` — `PRESET_MODULES` 定义与 HTML 渲染
 - 新增 `src/event-handlers.ts` — ST 事件处理器（DI 化注入）
-- `src/index.ts` 由 786 行瘦身到 ~574 行
+- 新增 `src/ui-builder.ts` — 设置面板 HTML 构建
+- 新增 `src/ui-bindings.ts` — UI 事件绑定与交互
+- `src/index.ts` 由 786 行缩减至约 118 行
 
 ### 🐛 致命 Bug 修复
 
@@ -44,17 +59,17 @@
 - `src/event-handlers.ts` 引入 `EventHandlerDeps` DI 接口，可单独 unregister
 - `types/sillytavern.d.ts` 修正 `EventSource.off` 错误声明（ST 实际叫 `removeListener`）
 - `types/sillytavern.d.ts` 修正 `isMobile` 类型从 `boolean` 改为 `() => boolean`
-- `index.ts` 移除重复的 `extension_settings as unknown as ...` 类型逃逸，统一用 `utils.getSettingsRoot()`
+- `index.ts` 统一通过 `settings.getSettingsRoot()` 访问扩展设置
 - `preset-proxy` 增加 `purgeLegacyMarker()` 一次性清理升级残留
 
 ### 📁 文件变更摘要
 
 | 类别 | 文件 |
 |---|---|
-| 新增源码 | `src/coordinator.ts` `src/utils.ts` `src/preset-modules.ts` `src/event-handlers.ts` |
+| 新增源码 | `src/coordinator.ts` `src/preset-modules.ts` `src/event-handlers.ts` `src/ui-builder.ts` `src/ui-bindings.ts` `src/mobile.ts` |
 | 新增构建 | `dist/*.js` × 13 + `.map` + `tsconfig.json` + `package.json` |
 | 新增类型 | `types/sillytavern.d.ts` |
-| 删除 | `index.js`（顶层）+ `src/*.js`（迁移到 `.ts` 编译输出到 `dist/`） |
+| 删除 | 顶层 `index.js`、旧 `src/*.js`、已废弃的 `model-switcher` / `utils` 产物 |
 
 ### ⚠️ 升级提示
 

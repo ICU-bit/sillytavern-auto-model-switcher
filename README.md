@@ -7,7 +7,7 @@
 
 SillyTavern 扩展插件：在 AI 回复完成后自动检测 NSFW 内容，并根据检测结果在下次生成时切换至预设模型。
 
-> 🆕 **v1.2.0**: TypeScript 全面迁移 + 6 个致命 Bug 修复 + 安全加固。详见 [CHANGELOG.md](CHANGELOG.md)。
+> 🆕 **v1.2.0（refactor 测试分支）**：TypeScript 全面迁移、模块拆分、可配置超时与重试、移动端适配和安全加固。当前版本正在等待 PC/移动端实机测试，尚未合并到默认 `master`。详见 [CHANGELOG.md](CHANGELOG.md)。
 
 ---
 
@@ -23,9 +23,15 @@ SillyTavern 扩展插件：在 AI 回复完成后自动检测 NSFW 内容，并�
 - 📝 **增强日志系统** — 可折叠日志面板，按级别过滤，支持复制/导出 JSON
 - 🔌 **独立 API 配置** — 切换目标模型的 API 地址和密钥可独立设置
 - 🔍 **正文提取** — 自动提取 `<content>` 标签内的正文内容用于检测
+- ⏱️ **可配置容错** — 可调整直调 API 超时、失败重试次数与 Proxy 安全超时
+- 📱 **PC/移动端适配** — 自定义模态框、移动端手风琴、原生分享与 44px 触摸目标
 - 🛡️ **AGPL v3 协议** — 最严格的开源保护
 
+> ⚠️ **分支说明**：GitHub 默认安装地址当前仍指向稳定版 `master`。`refactor` 是待测试版本；测试人员手动安装时请使用 `git clone -b refactor ...`。
+
 ## 安装方法
+
+以下安装方式面向默认稳定分支 `master`。参与 v1.2.0 `refactor` 测试时，请使用后文的测试分支命令。
 
 ### 方式一：通过插件管理页面安装（推荐）
 
@@ -45,15 +51,15 @@ SillyTavern 扩展插件：在 AI 回复完成后自动检测 NSFW 内容，并�
 # 进入 SillyTavern 扩展目录
 cd SillyTavern/public/scripts/extensions/third-party/
 
-# 克隆仓库
-git clone https://github.com/ICU-bit/sillytavern-auto-model-switcher.git
+# 克隆 refactor 测试分支
+git clone -b refactor https://github.com/ICU-bit/sillytavern-auto-model-switcher.git
 
 # 重启 SillyTavern（插件自动加载）
 ```
 
-### 升级到最新版本
+### 升级当前分支
 
-如果你已经安装过本插件，升级方式：
+如果你已经安装过本插件，升级当前所在分支：
 
 ```bash
 cd SillyTavern/public/scripts/extensions/third-party/sillytavern-auto-model-switcher/
@@ -83,7 +89,10 @@ git pull
 |---|---|
 | **检测 API 密钥** | NSFW 检测 API 的密钥 |
 | **目标模型API密钥** | 切换目标模型的 API 密钥 |
-| **NSFW 预设导入** 🔧 dev | 导入酒馆预设文件，自动分模块展示，每字段独立开关 + 内联编辑 |
+| **NSFW 预设导入** | 导入酒馆预设文件，自动分模块展示，每字段独立开关 + 内联编辑 |
+| **直调 API 超时** | 等待目标 API 响应的最长时间，默认 60 秒；thinking 模型可适当提高 |
+| **失败重试次数** | 超时或网络错误后的自动重试次数，默认 1 次；HTTP 错误不重试 |
+| **Proxy 安全超时** | Proxy 覆盖的兜底恢复时间，默认 30 秒 |
 | **显示通知** | 切换/恢复时显示 toastr 弹窗 |
 | **调试模式** | 显示详细运行日志，方便排查问题 |
 
@@ -141,7 +150,7 @@ git pull
 - **不修改原对象** — Proxy 包装，ST 原始设置保持不变
 - **格式化兼容** — ST 的格式化流程读取 Proxy 对象，获取 NSFW 预设值
 - **自动恢复** — 生成请求完成后自动恢复原始值
-- **安全超时** — 30 秒安全超时，防止状态卡死
+- **安全超时** — 默认 30 秒且可在高级设置中调整，防止状态卡死
 
 ---
 
@@ -200,11 +209,11 @@ src/                              dist/                       ← 编译产物 (
 ├── preset-proxy.ts               → dist/preset-proxy.js      ← Proxy 预设系统（偷天换日）
 ├── preset-modules.ts             → dist/preset-modules.js    ← 预设模块定义与渲染
 ├── detector.ts                   → dist/detector.js          ← NSFW 检测 API 调用
-├── model-switcher.ts             → dist/model-switcher.js    ← oai_settings 快照（手动恢复）
 ├── settings.ts                   → dist/settings.js          ← 设置持久化与 DOM 同步
 ├── logger.ts                     → dist/logger.js            ← 日志收集与渲染
-├── mobile.ts                     → dist/mobile.js            ← 移动端工具（模态框/手风琴）
-└── utils.ts                      → dist/utils.js             ← 通用工具函数
+├── mobile.ts                     → dist/mobile.js            ← PC/移动端工具（模态框/分享/手风琴）
+├── ui-builder.ts                 → dist/ui-builder.js         ← 设置面板 HTML 构建
+└── ui-bindings.ts                → dist/ui-bindings.js        ← UI 事件绑定与交互
 
 types/sillytavern.d.ts            ← 集中收口 ST 类型声明
 style.css                         ← 原生 ST 设计系统样式表
@@ -228,12 +237,15 @@ manifest.json                     ← ST 扩展清单 (js → dist/index.js)
 - **状态协调器** — 统一持有 fetch + Proxy + presetOverrides 三层副作用 (v1.2.0)
 - **致命 Bug 修复** — isMobile / SWITCHED 卡死 / Proxy 污染 / 事件泄漏 等 6 处 (v1.2.0)
 - **安全加固** — 原型污染防护 / Symbol marker / 资源泄漏修复 (v1.2.0)
+- **可配置容错** — 直调 API 超时、失败重试次数与 Proxy 安全超时均可调 (v1.2.0)
+- **UI 模块拆分** — `ui-builder` / `ui-bindings` / `preset-modules` 降低入口复杂度 (v1.2.0)
+
+> 🧪 `refactor` 分支当前等待 PC 与移动端实机测试，测试完成并经维护者批准后再合并到 `master`。
 
 ### 🔮 计划中
 
 - **独立消息拼接** — 自行组装聊天上下文，支持任意 API 协议
 - **多目标模型** — 支持多个 NSFW 模型按规则轮换
-- **可配置超时** — 直调 API 超时时间用户可调
 
 详见 [TODO.md](TODO.md) 和 [CHANGELOG.md](CHANGELOG.md)。
 
