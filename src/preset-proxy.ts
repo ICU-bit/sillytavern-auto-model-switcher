@@ -1,14 +1,21 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /**
- * NSFW 模型切换器 - 预设代理模块
+ * NSFW 模型切换器 - 预设覆盖模块
  *
- * 使用 JavaScript Proxy 实现"偷天换日"：
- * - 扩展加载时，用 Proxy 包装 power_user 的 instruct/context/sysprompt/reasoning
- * - NSFW 激活时，Proxy 的 get trap 返回覆盖值，原始对象不被修改
- * - NSFW 关闭时，Proxy 返回原始值
+ * 机制：激活窗口内"换引用"（overlay swap）
+ * - NSFW 激活时，把 power_user 的 instruct/context/sysprompt/reasoning
+ *   临时替换为「原对象浅拷贝 + 覆盖值」合并出的普通对象（overlay）
+ * - fetch 拦截捕获请求后 / 生成结束时，把原对象引用原样放回
+ * - 原始对象本身自始至终未被修改
  *
- * 这样 ST 的格式化流程读到的是我们的预设值，但 power_user 本身从未被修改。
+ * ⚠️ 历史教训（v1.2.0 事故）：早期实现在扩展加载时就把这四个子对象
+ * 常驻替换为 ES6 Proxy。但 ST 1.18.0+ 的 renderStoryString() /
+ * formatInstructModeChat() / preset-manager 保存流程会对这些对象执行
+ * structuredClone()，而 Proxy 是 exotic object，按 HTML 规范必抛
+ * DataCloneError → ST 弹出 "Error rendering story string" 并中断生成。
+ * 因此这里绝不能用 Proxy 包装 power_user 的子对象——overlay 必须是
+ * 普通对象，structuredClone 才能正常工作。
  */
 
 import { power_user } from '../../../../../scripts/power-user.js';
@@ -37,10 +44,15 @@ type ModuleSwitches = Record<string, boolean>;
 /** 预设原始数据（字段动态） */
 type PresetSource = Record<string, unknown>;
 
-/** 内部代理状态 */
+/** 被换下的原对象引用（按类别） */
+type OriginalRefs = Partial<Record<ProxyCategory, IndexableObject>>;
+
+/** 内部覆盖状态 */
 interface ProxyState {
     active: boolean;
     overrides: OverrideMap;
+    /** 激活期间被换下的 power_user 子对象原始引用 */
+    originals: OriginalRefs | null;
     /** genParams 快照（用于恢复） */
     originalGenParams: IndexableObject | null;
     /** 安全超时定时器 */
@@ -57,9 +69,13 @@ const proxyState: ProxyState = {
         sysprompt: {},
         reasoning: {},
     },
+    originals: null,
     originalGenParams: null,
     safetyTimer: null,
 };
+
+/** 需要 overlay 的四个类别 */
+const OVERRIDE_CATEGORIES: ProxyCategory[] = ['instruct', 'context', 'sysprompt', 'reasoning'];
 
 // genParams 键名列表
 const GEN_PARAM_KEYS: string[] = [
@@ -71,21 +87,21 @@ const GEN_PARAM_KEYS: string[] = [
 // context 全局字段（属于 power_user 顶层，不属于 power_user.context）
 const CONTEXT_GLOBAL_KEYS: string[] = ['always_force_name2', 'trim_sentences', 'single_line'];
 
-// 幂等标记，防止重复安装 Proxy
+// overlay 对象标记 + 原对象引用携带键
 //
-// 使用 Symbol.for('...') 注册全局 Symbol — 跨模块/跨浏览器热重载返回同一引用，
-// 既避免普通 Symbol 在热重载丢失的问题，又有 Symbol 独有的两大关键好处：
+// 使用 Symbol.for('...') 注册全局 Symbol — 跨模块/跨浏览器热重载返回同一引用。
+// Symbol 键有两大关键好处：
 //
 //   1. JSON.stringify() 自动跳过 Symbol 键
-//      → ST 把 power_user.instruct 序列化保存到磁盘 / localStorage 时,
-//        marker 不会被持久化, 用户卸载本插件后不会留下污染。
+//      → 即使 overlay 在激活窗口内被 ST 序列化保存, 原对象引用也不会泄漏。
 //   2. structuredClone() 不复制 Symbol 键
-//      → model-switcher.takeSnapshot() 用 structuredClone(power_user.instruct)
-//        创建快照, 快照中天然不带 marker, Object.assign 回写时也不污染。
+//      → ST 的 renderStoryString() 等对 overlay 做 structuredClone 时,
+//        克隆结果不带 marker, 完全等同普通预设对象。
 //
-// (历史: 之前用字符串 '__nsfw_proxy_installed__', 通过 Proxy.set trap
-//  穿透到原始对象, 会被 ST 序列化保存, 卸载插件后永久残留。)
-const NSFW_PROXY_MARKER: unique symbol = Symbol.for('nsfw-auto-model-switcher.proxy-installed');
+// (历史: v1.2.0 曾把这四个子对象常驻替换为 ES6 Proxy, 导致 ST 1.18.0+
+//  structuredClone 抛 DataCloneError, 用户每次生成都报
+//  "Error rendering story string"。)
+const NSFW_ORIGINAL_REF: unique symbol = Symbol.for('nsfw-auto-model-switcher.original-ref');
 
 // 安全超时时间（默认 30000 毫秒，可通过 settings.safetyTimeoutMs 配置）
 const DEFAULT_SAFETY_TIMEOUT_MS = 30000;
@@ -120,58 +136,72 @@ export function setOnSafetyTimeout(callback: SafetyTimeoutCallback | null): void
     onSafetyTimeout = callback;
 }
 
-// ===== Proxy 创建 =====
+// ===== Overlay 创建 =====
 
 /**
- * 为 power_user 的子对象创建 Proxy
+ * 为 power_user 的子对象创建 overlay（普通对象，非 Proxy）
+ *
+ * overlay = 原对象浅拷贝 + 覆盖值，并通过不可枚举的 Symbol 键携带原对象引用。
+ * 浅拷贝足够：这四个子对象的字段都是标量/字符串；即使有嵌套对象，
+ * ST 只在生成流程中读取，不会通过 overlay 写入原对象。
  */
-function createSubObjectProxy(originalObj: IndexableObject, category: ProxyCategory): IndexableObject {
-    return new Proxy(originalObj, {
-        get: function (target, prop, receiver) {
-            // 如果 NSFW 激活且该属性有覆盖值，返回覆盖值
-            if (
-                proxyState.active &&
-                proxyState.overrides[category] &&
-                typeof prop === 'string' &&
-                prop in proxyState.overrides[category]
-            ) {
-                return proxyState.overrides[category][prop];
-            }
-            return Reflect.get(target, prop, receiver);
-        },
-        set: function (target, prop, value, receiver) {
-            // 写入穿透到原始对象（ST 预设加载仍正常工作）
-            return Reflect.set(target, prop, value, receiver);
-        },
-        has: function (target, prop) {
-            // 支持 'prop in obj' 操作符
-            if (
-                proxyState.active &&
-                proxyState.overrides[category] &&
-                typeof prop === 'string' &&
-                prop in proxyState.overrides[category]
-            ) {
-                return true;
-            }
-            return Reflect.has(target, prop);
-        },
-        ownKeys: function (target) {
-            return Reflect.ownKeys(target);
-        },
-        getOwnPropertyDescriptor: function (target, prop) {
-            return Reflect.getOwnPropertyDescriptor(target, prop);
-        },
+function createOverlay(originalObj: IndexableObject, overrides: IndexableObject): IndexableObject {
+    const overlay: IndexableObject = { ...originalObj, ...overrides };
+    Object.defineProperty(overlay, NSFW_ORIGINAL_REF, {
+        value: originalObj,
+        enumerable: false,
+        writable: false,
+        configurable: true,
     });
+    return overlay;
+}
+
+/** 帮助类型: 允许在对象上读取 NSFW_ORIGINAL_REF (Symbol) */
+type OriginalRefCarrier = { [NSFW_ORIGINAL_REF]?: IndexableObject };
+
+/**
+ * 把四个类别的 overlay 换入 power_user（仅替换有覆盖值的类别）
+ */
+function swapInOverlays(): void {
+    // 防重入: 若上一轮 overlay 尚未换出, 先还原, 避免双重包裹丢失原引用
+    if (proxyState.originals) {
+        swapOutOverlays();
+    }
+    const pu = power_user as unknown as Record<ProxyCategory, IndexableObject>;
+    proxyState.originals = {};
+    for (const cat of OVERRIDE_CATEGORIES) {
+        const overrides = proxyState.overrides[cat];
+        if (!overrides || Object.keys(overrides).length === 0) continue;
+        const original = pu[cat];
+        if (!original || typeof original !== 'object') continue;
+        proxyState.originals[cat] = original;
+        pu[cat] = createOverlay(original, overrides);
+    }
+}
+
+/**
+ * 把原对象引用换回 power_user
+ *
+ * 防御：若窗口期间 ST 自己替换了该子对象（如用户手动切换 instruct 预设），
+ * 当前值不再是我们的 overlay，则放弃还原该类别，尊重外部的最新值。
+ */
+function swapOutOverlays(): void {
+    if (!proxyState.originals) return;
+    const pu = power_user as unknown as Record<ProxyCategory, IndexableObject>;
+    for (const cat of OVERRIDE_CATEGORIES) {
+        const original = proxyState.originals[cat];
+        if (!original) continue;
+        const current = pu[cat] as OriginalRefCarrier;
+        if (current && current[NSFW_ORIGINAL_REF] === original) {
+            pu[cat] = original;
+        } else {
+            addLog('覆盖窗口内 ' + cat + ' 被外部替换，保留外部值不还原', 'warning');
+        }
+    }
+    proxyState.originals = null;
 }
 
 // ===== 初始化 =====
-
-/**
- * 安装 Proxy 到 power_user 的四个子对象
- * 应在扩展加载时调用一次
- */
-/** 帮助类型: 允许在对象上读写 NSFW_PROXY_MARKER (Symbol) */
-type MarkerCarrier = { [NSFW_PROXY_MARKER]?: boolean };
 
 /** 历史遗留的字符串 marker (v1.1.0 及之前)，需要清理掉避免污染 ST 持久化 */
 const LEGACY_STRING_MARKER = '__nsfw_proxy_installed__';
@@ -181,7 +211,7 @@ const LEGACY_STRING_MARKER = '__nsfw_proxy_installed__';
  *
  * v1.1.0 及之前用字符串 marker, 通过 Proxy.set 穿透写入原始对象。
  * 升级到本版本后, 残留 marker 仍会被 ST 序列化保存。
- * 此函数在 initProxies 前调用一次, 把残留 marker 从所有相关对象上删除。
+ * 此函数在 initPresetOverrides 时调用一次, 把残留 marker 从所有相关对象上删除。
  */
 function purgeLegacyMarker(): void {
     const targets = [power_user.instruct, power_user.context, power_user.sysprompt, power_user.reasoning];
@@ -197,26 +227,32 @@ function purgeLegacyMarker(): void {
     }
 }
 
-export function initProxies(): void {
-    // 先清理旧字符串 marker（一次性 migration, 升级安全网）
+/**
+ * 初始化预设覆盖模块（扩展加载时调用一次）
+ *
+ * 不再常驻安装任何东西（v1.2.0 的常驻 Proxy 已废除）。
+ * 仅做两件防御性清理：
+ * 1. 清理 v1.1.0 字符串 marker 残留
+ * 2. 恢复上次异常退出（热重载/崩溃）留下的 overlay 残留
+ */
+export function initPresetOverrides(): void {
     purgeLegacyMarker();
 
-    // 幂等检查：防止重复安装（浏览器热重载）
-    const instruct = power_user.instruct as MarkerCarrier;
-    if (instruct[NSFW_PROXY_MARKER]) {
-        addDebugLog('Proxy 已安装，跳过重复初始化');
-        return;
+    // 热重载残留恢复: 若 power_user 子对象仍是上次会话的 overlay, 换回原对象
+    const pu = power_user as unknown as Record<ProxyCategory, IndexableObject>;
+    let restored = 0;
+    for (const cat of OVERRIDE_CATEGORIES) {
+        const current = pu[cat] as OriginalRefCarrier | undefined;
+        if (current && typeof current === 'object' && current[NSFW_ORIGINAL_REF]) {
+            pu[cat] = current[NSFW_ORIGINAL_REF] as IndexableObject;
+            restored++;
+        }
+    }
+    if (restored > 0) {
+        addLog('已恢复 ' + restored + ' 处 overlay 残留 (上次未正常停用)', 'warning');
     }
 
-    power_user.instruct = createSubObjectProxy(power_user.instruct as IndexableObject, 'instruct');
-    power_user.context = createSubObjectProxy(power_user.context as IndexableObject, 'context');
-    power_user.sysprompt = createSubObjectProxy(power_user.sysprompt as IndexableObject, 'sysprompt');
-    power_user.reasoning = createSubObjectProxy(power_user.reasoning as IndexableObject, 'reasoning');
-
-    // 标记已安装 (Symbol 不会被 JSON.stringify / structuredClone 持久化)
-    (power_user.instruct as MarkerCarrier)[NSFW_PROXY_MARKER] = true;
-
-    addLog('预设代理已安装', 'info', 'debug');
+    addLog('预设覆盖模块已初始化', 'info', 'debug');
 }
 
 // ===== 覆盖激活/停用 =====
@@ -343,7 +379,8 @@ export function activateOverrides(presetData: PresetSource, mods?: ModuleSwitche
         }
     }
 
-    // 激活 Proxy
+    // 换入 overlay（普通对象，structuredClone 安全）并标记激活
+    swapInOverlays();
     proxyState.active = true;
 
     // 启动安全超时看门狗
@@ -358,11 +395,12 @@ export function activateOverrides(presetData: PresetSource, mods?: ModuleSwitche
  */
 export function deactivateOverrides(): void {
     // 如果未激活，直接返回
-    if (!proxyState.active && !proxyState.originalGenParams) {
+    if (!proxyState.active && !proxyState.originalGenParams && !proxyState.originals) {
         return;
     }
 
-    // 停用 Proxy
+    // 换回原对象引用
+    swapOutOverlays();
     proxyState.active = false;
 
     // 清空覆盖数据

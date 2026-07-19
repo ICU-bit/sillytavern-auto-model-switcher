@@ -30,12 +30,12 @@ npm test         # 当前同样执行 tsc --noEmit
 ```text
 src/
 ├── index.ts              入口与模块编排
-├── coordinator.ts        统一协调 fetch、Proxy、presetOverrides
+├── coordinator.ts        统一协调 fetch、预设 overlay、presetOverrides
 ├── state.ts              四状态 FSM 与转换 hook
 ├── event-handlers.ts     SillyTavern 事件注册/注销
 ├── direct-api.ts         Plan B fetch 拦截和目标 API 直调
 ├── detector.ts           NSFW 检测 API 调用与正文提取
-├── preset-proxy.ts       power_user Proxy 覆盖与安全恢复
+├── preset-proxy.ts       power_user 预设 overlay 覆盖与安全恢复
 ├── preset-modules.ts     预设模块定义、字段渲染与转义
 ├── settings.ts           设置类型、默认值、持久化与预设 CRUD
 ├── logger.ts             环形日志、级别过滤与渲染回调
@@ -84,13 +84,17 @@ PENDING_RESTORE
   └─ 下一次生成开始 → IDLE
 ```
 
-`state.ts` 负责纯状态转换；`coordinator.ts` 根据转换统一启停 fetch 拦截、Proxy 和请求参数覆盖，避免三层副作用不同步。
+`state.ts` 负责纯状态转换；`coordinator.ts` 根据转换统一启停 fetch 拦截、预设 overlay 和请求参数覆盖，避免三层副作用不同步。
 
-### 4.3 Proxy 预设系统
+### 4.3 预设 overlay 系统
 
-`preset-proxy.ts` 通过 ES6 Proxy 包装 `power_user` 的预设对象，使 SillyTavern 在格式化请求时读取已启用的 NSFW 预设字段，同时不持久化修改原对象。
+`preset-proxy.ts`（文件名为历史遗留）在 NSFW 激活窗口内把 `power_user` 的 instruct/context/sysprompt/reasoning 临时替换为「原对象浅拷贝 + 覆盖值」合并出的**普通对象**（overlay），fetch 拦截捕获请求后把原对象引用原样放回。原始对象自始至终未被修改。
 
-- marker 使用 `Symbol.for(...)`，不会进入 JSON 序列化。
+> ⚠️ **为什么不用 ES6 Proxy**（v1.2.0 事故）：早期实现在扩展加载时就把这四个子对象常驻替换为 Proxy。但 ST 1.18.0+ 的 `renderStoryString()`（power-user.js）、instruct-mode.js、preset-manager.js 会对它们执行 `structuredClone()`，而 Proxy 是 exotic object，按规范必抛 `DataCloneError`，导致用户每次生成都报 “Error rendering story string” 并中断。overlay 必须保持普通对象。
+
+- overlay 通过不可枚举的 `Symbol.for(...)` 键携带原对象引用，不会进入 JSON 序列化与 structuredClone。
+- 换回时校验当前值仍是自己的 overlay；若窗口内被 ST 替换（如用户切换预设）则尊重外部值。
+- 初始化时恢复热重载/异常退出留下的 overlay 残留，并清理 v1.1.0 字符串 marker。
 - 导入 JSON 过滤 `__proto__`、`constructor`、`prototype`。
 - `safetyTimeoutMs` 默认 30000ms，可配置；异常时自动恢复覆盖状态。
 
@@ -125,7 +129,7 @@ PENDING_RESTORE
 | `modelAApiKey` | `""` | 目标 API Key |
 | `apiTimeoutMs` | `60000` | 直调 API 超时 |
 | `apiRetries` | `1` | 网络/超时重试次数 |
-| `safetyTimeoutMs` | `30000` | Proxy 安全恢复超时 |
+| `safetyTimeoutMs` | `30000` | 预设 overlay 安全恢复超时 |
 | `logMaxEntries` | `200` | 日志环形缓冲上限 |
 
 `collectAndSaveFromDom()` 采用白名单增量更新，保留未显示在 DOM 中的预设数据，避免新增字段被整对象重建意外丢失。
@@ -135,7 +139,7 @@ PENDING_RESTORE
 `index.ts` 初始化顺序：
 
 1. 加载设置并配置日志上限。
-2. 初始化 Proxy 和 fetch interceptor。
+2. 初始化预设覆盖模块和 fetch interceptor。
 3. 注入 `ui-builder.ts` 生成的面板。
 4. 绑定 `ui-bindings.ts` 事件和日志渲染。
 5. 注册 `event-handlers.ts` 的 SillyTavern 事件。

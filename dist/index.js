@@ -6,7 +6,7 @@ import { EXTENSION_NAME, DEFAULT_SETTINGS, loadSettings, getSettingsRoot } from 
 import { createStateMachine } from './state.js';
 import { createCoordinator } from './coordinator.js';
 import { initFetchInterceptor, isInterceptEnabled, setOnRequestRedirected } from './direct-api.js';
-import { initProxies } from './preset-proxy.js';
+import { initPresetOverrides } from './preset-proxy.js';
 import { prefersReducedMotion, initAccordion } from './mobile.js';
 import { createSettingsHtml } from './ui-builder.js';
 import { setupLogRendering, bindSettingsListeners } from './ui-bindings.js';
@@ -50,7 +50,7 @@ $(() => {
     state = createStateMachine();
     coordinator = createCoordinator(state);
     isReady = false;
-    initProxies();
+    initPresetOverrides();
     initFetchInterceptor();
     setOnRequestRedirected(() => coordinator.onPayloadCaptured());
     coordinator.attach();
